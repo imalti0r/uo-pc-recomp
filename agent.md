@@ -108,7 +108,7 @@
 
 - Repo: https://github.com/imalti0r/uo-pc-recomp
 - Release: https://github.com/imalti0r/uo-pc-recomp/releases/tag/v0.1.0-alpha.1
-- Asset: UO-Setup-0.1.0-alpha.1-windows.zip (166 MiB, sha256 011dcc1d2a12fbf50f21d16526a5332a066be8e5f055d4d9f890cda859f922f5, replaced 2026-11-14 after the launcher fixes)
+- Asset: UO-Setup-0.1.0-alpha.1-windows.zip (166 MiB, sha256 e4db6af86aef9424ff91c8d38d074cf8d25c593116d0d4e7eed55d691e7daa3e, replaced 2026-11-14 after the launcher fixes)
 - E2E verified: clean setup package installed to build/e2e-final in 120 s (result ok), produced a uo.exe that reaches the title screen.
 - Icon: runtime/uo.ico, made by tools/make_icon.py from the PlayStation key art (rounded square, 10 sizes).
 - Setup build: .venv-py314\\Scripts\\python.exe tools/make_engage_release.py --out build/release/uo-setup --zip build/release/UO-Setup-<ver>-windows.zip
