@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "gfx.h"
+#include "cfg.h"
 #include "host.h"
 #include "nvn_api.h"
 #include "nvn_hmap.h"
@@ -694,6 +695,17 @@ static void sleep_until(uint64_t deadline) {
 // NVNwindowAcquireTextureResult nvnWindowAcquireTexture(NVNwindow *w, NVNsync *s, int *index): blocks here, not in the
 // present, until the image's previous present plus one period has passed (the game often presents with a lock held).
 // That is the time the next frame goes to the display, so the image is free as soon as that time is reached.
+// UO_PACE_LOG=N: the first N acquires and presents, with the interval the game asked for and the waits, so a frame
+// rate below the display's can be traced to the side that holds it.
+static int pace_log_left = -1;
+static int pace_log(void) {
+    if (pace_log_left < 0) {
+        const char *e = cfg_get("UO_PACE_LOG");
+        pace_log_left = e && *e ? atoi(e) : 0;
+    }
+    return pace_log_left > 0 ? pace_log_left-- : 0;
+}
+
 NVN_API(nvnWindowAcquireTexture) {
     win_t *o = arg_p(c, 0);
     sync_t *s = arg_p(c, 1);
@@ -702,10 +714,14 @@ NVN_API(nvnWindowAcquireTexture) {
     int idx = o->active ? o->next++ % o->active : 0;
     *out = idx;
     uint64_t at = idx < 4 ? o->avail[idx] : 0;
+    uint64_t wait0 = kern_now_ns();
     if (at) {
         uint64_t p0 = perf_begin();
         sleep_until(at);
         perf_end(PERF_PACE, p0);
+        if (pace_log())
+            rt_log("pace: acquire %d waited %.2f ms (interval %d, %d active)", idx, (kern_now_ns() - wait0) / 1e6,
+                   o->interval, o->active);
     }
     // The sync means "the display no longer reads this image". Presents are copies queued in submit order, so it is
     // already satisfied: fenced = 3 with fence 0.
@@ -730,7 +746,11 @@ NVN_API(nvnQueuePresentTexture) {
     o->presents++;
     const tex_t *t = (const tex_t *)o->tex[idx];
     uint64_t period = present_period(o), now = kern_now_ns();
-    uint64_t slot = now + pace(&o->pace, now, period);
+    uint64_t hold = pace(&o->pace, now, period);
+    uint64_t slot = now + hold;
+    if (pace_log())
+        rt_log("pace: present %d interval %d period %.2f ms held %.2f ms (%d active, realtime %d)", idx, o->interval,
+               period / 1e6, hold / 1e6, o->active, frame_step_realtime());
     gfx_backend()->present(t, o->crop, slot);
     o->ticket[idx] = o->presents;
     o->avail[idx] = slot + period;
