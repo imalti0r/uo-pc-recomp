@@ -35,7 +35,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
         written = swprintf(python, 32768, L"%ls\\python\\pythonw.exe", folder);
     }
     if (written < 0 || written >= 32768 || GetFileAttributesW(python) == INVALID_FILE_ATTRIBUTES) goto fail;
-    written = swprintf(command, 32768, L"\"%ls\" -I -m engage_setup.gui %ls", python, arguments);
+    written = swprintf(command, 32768, L"\"%ls\" -I -m uo_setup.gui %ls", python, arguments);
     if (written < 0 || written >= 32768) goto fail;
     STARTUPINFOW si = {.cb = sizeof si};
     PROCESS_INFORMATION pi;
@@ -44,7 +44,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
     CloseHandle(pi.hProcess);
     return 0;
 fail:
-    MessageBoxW(NULL, L"Extract the entire setup ZIP, keeping its files together, then run Engage-Launcher.exe again.",
-                L"Engage PC Recomp", MB_OK | MB_ICONERROR);
+    MessageBoxW(NULL, L"Extract the entire setup ZIP, keeping its files together, then run UO-Launcher.exe again.",
+                L"Unicorn Overlord PC Recomp", MB_OK | MB_ICONERROR);
     return 1;
 }

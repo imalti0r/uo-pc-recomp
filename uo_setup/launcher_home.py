@@ -82,8 +82,9 @@ class Home(ttk.Frame):
         y = int(h * .56)
         self.dot = self.canvas.create_oval(left, y - 4, left + 8, y + 4, fill='#80c973', outline='')
         self.status = self.canvas.create_text(left + 19, y, text='', fill=INK, anchor='w', font=(UI_FONT, 11, 'bold'))
-        self.canvas.create_line(left + 162, y - 10, left + 162, y + 10, fill='#465266')
-        self.canvas.create_text(left + 176, y, text='Game 1.05', fill=MUTED, anchor='w', font=(UI_FONT, 11))
+        # The separator and the version follow the status text, so a longer status ("Setup needed") never runs into them.
+        self.divider = self.canvas.create_line(left + 162, y - 10, left + 162, y + 10, fill='#465266')
+        self.version = self.canvas.create_text(left + 176, y, text='Game 1.05', fill=MUTED, anchor='w', font=(UI_FONT, 11))
         self.play_button.set_size(width, 64)
         self.canvas.create_window(left, int(h * .65), window=self.play_button, anchor='nw', width=width, height=64)
         self.canvas.create_text(left + width // 2, int(h * .65) + 86, text='F1 for in-game settings',
@@ -96,6 +97,12 @@ class Home(ttk.Frame):
         if hasattr(self, 'status'):
             self.canvas.itemconfigure(self.status, text='Game running' if running else 'Working…' if busy else 'Ready to play' if ready else 'Setup needed')
             self.canvas.itemconfigure(self.dot, fill='#80c973' if ready else GOLD)
+            # Lay the divider and version out after the status text, so they never overlap it.
+            end = self.canvas.bbox(self.status)
+            x = (end[2] + 16) if end else 170
+            y = int(self.canvas.winfo_height() * .56)
+            self.canvas.coords(self.divider, x, y - 10, x, y + 10)
+            self.canvas.coords(self.version, x + 14, y)
         self.backup.configure(state='normal' if ready and not running and not busy else 'disabled')
         self.open_saves.configure(state='normal' if ready else 'disabled')
 
