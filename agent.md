@@ -104,6 +104,14 @@
 - 关键开关：`UO_POOL_ALIGN`（1=连存储一起移，会白屏，仅对比用）、
   `UO_POOL_ADDR_ALIGN`（默认 1，只对齐回报地址）、`UO_SHADER_DUMP`
 
+## 🚀 Release v0.1.0-alpha.2 (2026-11-14)
+
+- Release: https://github.com/imalti0r/uo-pc-recomp/releases/tag/v0.1.0-alpha.2
+- Asset: UO-Setup-0.1.0-alpha.2-windows.zip (166 MiB, sha256 548a16d1a6c7baf7bac273bf2072e80d0d127fda5eeaacf91647c1c68bdccafb)
+- E2E verified: clean package installed to `build/e2e-a5/install` in 116 s (`result: ok`), built uo.exe runs at 57.6 fps in the light scenes.
+- Fixed: launcher/installer art is Unicorn Overlord's own; `uo.exe` is a GUI subsystem binary (no console); rounded key-art icon in the exe and the window; per-monitor DPI awareness so the overlay is sharp at 150/200 %; the perf overlay's GPU timestamps are one pair per frame instead of one per 64-draw part.
+- Open: the battle scene is ~26 ms a frame (30-45 fps) with the GPU idle; `UO_PACE_LOG=10` shows the present pacer holding a full 16.5 ms period per frame on top of ~9.8 ms of work. Fixing it needs the game's own timing reads (a realtime frame step), not located yet.
+
 ## 🚀 Release v0.1.0-alpha.1 (2026-11-14)
 
 - Repo: https://github.com/imalti0r/uo-pc-recomp
