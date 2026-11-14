@@ -48,15 +48,12 @@ def tcltk_files():
 
 
 def setup_icon(path):
-    """An original E monogram in a blue tile; contains no game artwork."""
-    size = 32
-    pixels = bytearray()
-    for y in reversed(range(size)):
-        for x in range(size):
-            letter = 8 <= x < 12 and 7 <= y < 25 or 8 <= x < 24 and (7 <= y < 11 or 14 <= y < 18 or 21 <= y < 25)
-            pixels.extend((255, 255, 255, 255) if letter else (145, 62, 25, 255))
-    dib = struct.pack('<IIIHHIIIIII', 40, size, size * 2, 1, 32, 0, len(pixels), 0, 0, 0, 0) + pixels + bytes(128)
-    path.write_bytes(struct.pack('<HHH', 0, 1, 1) + struct.pack('<BBBBHHII', size, size, 0, 0, 1, 32, len(dib), 22) + dib)
+    """The launcher's icon: runtime/uo.ico, the same rounded-square key-art tile as uo.exe, so setup and the game
+    read as one product. Copied rather than drawn, so there is only one icon to keep current."""
+    source = ROOT / 'runtime/uo.ico'
+    if not source.is_file():
+        raise ValueError(f'{source} is missing: run tools/make_icon.py first')
+    shutil.copy2(source, path)
 
 
 def copy_sources(out):

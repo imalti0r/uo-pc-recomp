@@ -55,9 +55,11 @@ class App:
         self.run_args = run_args or {}   # extra CLI options for tests: temp, verify
         self.log_entries = []            # events and raw lines of the run, rendered by render_log
         self.bound = []                  # (widget, option, id, params) retranslated on a language switch
-        # text wraps at the design width scaled for this display, so a 150 % screen keeps the layout
+        # text wraps at the design width scaled for this display, so a 150 % screen keeps the layout; fit() widens it
+        # to the window, since a wide window should not stack a paragraph in a narrow column
         self.dpi = getattr(root, '_engage_dpi_factor', 1.0) or 1.0
         self.wrap = int(round(620 * self.dpi))
+        self.wrap_labels = []
         self.vars = {n: tk.StringVar() for n in ('base', 'update', 'keys', 'dest')}
         self.vars['lang'] = tk.StringVar()
         self.lang_code = default_game_language(ui_lang)
@@ -83,6 +85,7 @@ class App:
 
         top = ttk.Frame(root, padding=(PAD, PAD, PAD, 0))
         top.pack(fill='x')
+        self.top = top
         self.title = self.label(top, 'ui.title', style='Title.TLabel')
         self.title.pack(side='left')
         version = ttk.Label(top, style='Version.TLabel')
@@ -94,8 +97,21 @@ class App:
         for code in self.ui_languages:
             ttk.Radiobutton(sw, text=code.upper(), value=code, variable=self.ui_var, style='Toolbutton',
                             command=self.switch_language).pack(side='left', padx=1)
-        self.body = ttk.Frame(root, padding=PAD)
-        self.body.pack(fill='both', expand=True)
+        # The body scrolls: at 200 % display scaling the form is taller than a 2160-pixel screen, and a window that
+        # grows past the screen hides its own Install button. The canvas holds the frame, a scrollbar appears only when
+        # the content does not fit, and the wheel scrolls it.
+        self.body_outer = ttk.Frame(root)
+        self.body_outer.pack(fill='both', expand=True)
+        self.canvas = tk.Canvas(self.body_outer, highlightthickness=0, borderwidth=0)
+        self.scrollbar = ttk.Scrollbar(self.body_outer, orient='vertical', command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.pack(side='left', fill='both', expand=True)
+        self.body = ttk.Frame(self.canvas, padding=PAD)
+        self.body_window = self.canvas.create_window(0, 0, window=self.body, anchor='nw')
+        self.body.bind('<Configure>', self.on_body_resize)
+        self.canvas.bind('<Configure>', self.on_canvas_resize)
+        for sequence in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+            self.canvas.bind_all(sequence, self.on_wheel, add='+')
         self.frames = {'form': self.build_form(), 'run': self.build_run(), 'finish': self.build_finish()}
         self.vars['lang'].set(self.lang_label(self.lang_code))
         self.vars['dest'].trace_add('write', lambda *_: self.refresh_form())
@@ -161,25 +177,86 @@ class App:
         self.fit()
 
     def fit(self):
-        """Size the window to its largest screen (an unpacked frame still reports the size its children ask for), so
-        a screen or language switch neither cuts text nor moves the buttons. The window only grows: opening the log
-        makes it taller, and a size the user dragged it to stays. Every text change that can add lines calls it again,
-        or pack takes the missing height from the button bars."""
+        """Size the window to its content, clamped to the screen. The body scrolls when the content is taller than the
+        window, so at 200 % display scaling the form stays usable instead of growing past the screen and hiding its own
+        buttons. The window only grows: opening the log makes it taller, and a size the user dragged it to stays."""
         self.root.update_idletasks()
-        sizes = [(f.winfo_reqwidth(), f.winfo_reqheight()) for f in self.frames.values()]
-        chrome = self.root.winfo_reqheight() - self.body.winfo_reqheight()   # the title row above the body
-        w = max(self.root.winfo_reqwidth(), max(s[0] for s in sizes) + 2 * PAD)
-        h = chrome + max(s[1] for s in sizes) + 2 * PAD
+        self.apply_wrap()
+        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+        # The body's requested height, not the root's: the canvas no longer reports the frame's height upward, so the
+        # content size has to come from the frame itself.
+        content = max(f.winfo_reqheight() for f in self.frames.values())
+        w = max(self.root.winfo_reqwidth(), self.body.winfo_reqwidth() + 2 * PAD)
+        h = self.top.winfo_reqheight() + content + 2 * PAD
+        screen_w, screen_h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        w, h = min(w, screen_w - 40), min(h, screen_h - 80)
         if (w, h) == self.fitted:   # refresh_run calls it on every poll: leave the window alone while nothing grew
             return
         self.fitted = (w, h)
-        self.root.minsize(w, h)
-        self.root.geometry(f'{max(w, self.root.winfo_width())}x{max(h, self.root.winfo_height())}')
+        self.root.minsize(min(w, screen_w - 40), min(h, screen_h - 80))
+        self.root.geometry(f'{w}x{h}')
+        self.root.update_idletasks()
+        self.apply_wrap()
+        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+        self.update_scrollbar()
+
+    def on_body_resize(self, event):
+        """Keep the wrapped labels as wide as the body, and the scroll region as tall as the content."""
+        if event.widget is self.body:
+            self.apply_wrap(event.width - 2 * PAD)
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+            self.update_scrollbar()
+
+    def on_canvas_resize(self, event):
+        """The body fills the canvas width, so the text wraps to the window and the content is as tall as it needs."""
+        self.canvas.itemconfigure(self.body_window, width=event.width)
+        self.apply_wrap(event.width - 2 * PAD)
+        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+        self.update_scrollbar()
+
+    def update_scrollbar(self):
+        """Show the scrollbar only when the content is taller than the viewport."""
+        needed = self.body.winfo_reqheight() > self.canvas.winfo_height() + 2
+        if needed and not self.scrollbar.winfo_ismapped():
+            self.scrollbar.pack(side='right', fill='y')
+        elif not needed and self.scrollbar.winfo_ismapped():
+            self.scrollbar.pack_forget()
+            self.canvas.yview_moveto(0)
+
+    def on_wheel(self, event):
+        """Scroll the body with the wheel when the pointer is over it."""
+        if not self.scrollbar.winfo_ismapped():
+            return
+        widget = self.root.winfo_containing(event.x_root, event.y_root)
+        if widget is None or not str(widget).startswith(str(self.body_outer)):
+            return
+        if getattr(event, 'num', None) == 4:
+            step = -1
+        elif getattr(event, 'num', None) == 5:
+            step = 1
+        else:
+            step = -1 if event.delta > 0 else 1
+        self.canvas.yview_scroll(step * 3, 'units')
+
+    def track_wrap(self, widget):
+        """Wrap this label to the body's width whenever the window is resized, instead of a fixed design width."""
+        widget.configure(wraplength=self.wrap)   # the design width until fit() knows the real one
+        self.wrap_labels.append(widget)
+        return widget
+
+    def apply_wrap(self, width=None):
+        """Set every tracked label's wraplength to the width it actually has room for."""
+        width = width or max(self.body.winfo_width() - 2 * PAD, 320)
+        for widget in self.wrap_labels:
+            try:
+                widget.configure(wraplength=width)
+            except tk.TclError:
+                pass
 
     def notice(self, parent):
-        w = ttk.Label(parent, style='Notice.TLabel', wraplength=self.wrap, justify='left')
+        w = ttk.Label(parent, style='Notice.TLabel', justify='left')
         self.bind_text(w, 'text', 'ui.notice')
-        return w
+        return self.track_wrap(w)
 
     def build_form(self):
         f = ttk.Frame(self.body)
@@ -187,7 +264,7 @@ class App:
         bar.pack(side='bottom', fill='x', pady=(12, 0))
         self.start_button = self.button(bar, 'ui.start', self.start)
         self.start_button.pack(side='right')
-        self.form_intro = self.label(f, 'ui.intro', wraplength=self.wrap, justify='left')
+        self.form_intro = self.track_wrap(self.label(f, 'ui.intro', justify='left'))
         self.form_intro.pack(anchor='w', pady=(0, 8))
         self.notice(f).pack(fill='x', pady=(0, 10))
         grid = ttk.Frame(f)
@@ -213,11 +290,11 @@ class App:
         self.label(grid, 'ui.dest').grid(row=i + 1, column=0, sticky='w', pady=4)
         ttk.Entry(grid, textvariable=self.vars['dest']).grid(row=i + 1, column=1, sticky='ew', pady=4)
         self.button(grid, 'ui.browse', self.pick_dest).grid(row=i + 1, column=2, padx=(8, 0))
-        self.update_hint = ttk.Label(f, wraplength=self.wrap, justify='left')
+        self.update_hint = self.track_wrap(ttk.Label(f, justify='left'))
         self.update_hint.pack(anchor='w', pady=(8, 0))
-        self.form_error = ttk.Label(f, style='Err.TLabel', wraplength=self.wrap, justify='left')
+        self.form_error = self.track_wrap(ttk.Label(f, style='Err.TLabel', justify='left'))
         self.form_error.pack(anchor='w', pady=(8, 0))
-        self.label(f, 'ui.keys_private', wraplength=self.wrap, justify='left').pack(anchor='w', pady=(8, 0))
+        self.track_wrap(self.label(f, 'ui.keys_private', justify='left')).pack(anchor='w', pady=(8, 0))
         return f
 
     def build_run(self):
@@ -233,13 +310,13 @@ class App:
         self.step_rows = {}
         self.steps_box = ttk.Frame(f)
         self.steps_box.pack(fill='x', pady=(8, 8))
-        self.phase_label = ttk.Label(f, wraplength=self.wrap, justify='left')
+        self.phase_label = self.track_wrap(ttk.Label(f, justify='left'))
         self.phase_label.pack(anchor='w')
         self.bar = ttk.Progressbar(f, mode='determinate', maximum=1000)
         self.bar.pack(fill='x', pady=(4, 6))
-        self.space_label = ttk.Label(f, wraplength=self.wrap, justify='left')
+        self.space_label = self.track_wrap(ttk.Label(f, justify='left'))
         self.space_label.pack(anchor='w')
-        self.warn_label = ttk.Label(f, wraplength=self.wrap, justify='left', foreground='#9a6700')
+        self.warn_label = self.track_wrap(ttk.Label(f, justify='left', foreground='#9a6700'))
         self.warn_label.pack(anchor='w')
         self.log_frame = ttk.Frame(f)
         self.log = tk.Text(self.log_frame, height=10, wrap='word', state='disabled', font=(self.mono_font, 9))
@@ -259,9 +336,9 @@ class App:
         self.open_button.pack(side='right', padx=(0, 8))
         self.back_button = self.button(bar, 'ui.back', lambda: self.show('form'))
         self.back_button.pack(side='left')
-        self.finish_title = ttk.Label(f, style='Title.TLabel', wraplength=self.wrap, justify='left')
+        self.finish_title = self.track_wrap(ttk.Label(f, style='Title.TLabel', justify='left'))
         self.finish_title.pack(anchor='w')
-        self.finish_text = ttk.Label(f, wraplength=self.wrap, justify='left')
+        self.finish_text = self.track_wrap(ttk.Label(f, justify='left'))
         self.finish_text.pack(anchor='w', pady=(8, 8))
         self.finish_steps = ttk.Frame(f)
         self.finish_steps.pack(fill='x', pady=(0, 8))

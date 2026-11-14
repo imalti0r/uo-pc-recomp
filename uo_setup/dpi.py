@@ -62,7 +62,9 @@ def apply(root):
     """Set Tk's point-to-pixel scaling from the monitor and return the pixel factor (1.0 at 96 DPI).
 
     Tk reads its scaling as pixels per point; the default matches 72 DPI, which leaves a 150 %
-    display with text a third too small once the process is DPI aware.
+    display with text a third too small once the process is DPI aware. The factor is also stored on
+    the root as _engage_dpi_factor: the windows size their wrapping and padding from it, and without
+    it they wrap at 96-DPI widths while the fonts are scaled, which stacks the text in a tall column.
     """
     value = dpi()
     factor = value / 96.0
@@ -70,6 +72,7 @@ def apply(root):
         root.tk.call('tk', 'scaling', value / 72.0)
     except Exception:   # a Tk build without the scaling command: keep its own default
         pass
+    root._engage_dpi_factor = factor
     if os.name == 'nt':
         # the menu font and the dialog font follow the scaling only when named explicitly
         try:

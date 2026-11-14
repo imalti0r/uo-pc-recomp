@@ -71,7 +71,7 @@ def capture(hwnd):
 
 def main():
     out = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else 'build/launcher_shot.png')
-    windows = find_window('Unicorn Overlord')
+    windows = find_window(sys.argv[2] if len(sys.argv) > 2 else 'Unicorn Overlord')
     if not windows:
         sys.exit('no launcher window found: start UO-Launcher.exe first')
     hwnd, title = windows[0]

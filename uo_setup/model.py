@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from installer.guilogic import Catalog as BaseCatalog, Form as BaseForm, STEP_ORDER
+from installer.guilogic import Catalog as BaseCatalog, Form as BaseForm, STEP_ORDER, load_texts
 from installer import ini
 
 TITLE = '010054B01AD92000'
@@ -82,6 +82,47 @@ TEXT_ZH = {
     'ui.update_start': '更新',
     'ui.play': '启动《圣兽之王》',
     'ui.start': '安装《圣兽之王》',
+    # The ids the shared catalog carries, so a Chinese window has no English left in it.
+    'ui.version': '版本 {version}',
+    'ui.keys': 'prod.keys（密钥）',
+    'ui.game_language': '游戏语言',
+    'ui.dest': '安装文件夹',
+    'ui.browse': '浏览…',
+    'ui.pick_game': '选择本体游戏文件',
+    'ui.pick_update': '选择 1.05 更新文件',
+    'ui.pick_keys': '选择 prod.keys',
+    'ui.pick_dest': '选择安装文件夹',
+    'ui.type_game': '本体游戏（NSP 或 XCI）',
+    'ui.type_nsp': 'NSP 文件',
+    'ui.type_keys': '密钥文件（prod.keys）',
+    'ui.type_all': '所有文件',
+    'ui.cancel': '取消',
+    'ui.cancelling': '正在取消…',
+    'ui.show_log': '显示日志',
+    'ui.hide_log': '隐藏日志',
+    'ui.close': '关闭',
+    'ui.back': '返回',
+    'ui.open_folder': '打开文件夹',
+    'ui.need_dest': '请选择安装文件夹。',
+    'ui.need_base': '请选择本体游戏。',
+    'ui.need_keys': '请选择 prod.keys。',
+    'ui.need_lang': '请选择游戏语言。',
+    'ui.missing_base': '所选本体游戏文件不存在。',
+    'ui.missing_update': '所选更新文件不存在。',
+    'ui.missing_keys': '所选密钥文件不存在。',
+    'ui.running_install': '正在安装《圣兽之王》…',
+    'ui.running_resume': '正在继续安装…',
+    'ui.running_update': '正在更新《圣兽之王》…',
+    'ui.state_started': '进行中',
+    'ui.state_done': '完成',
+    'ui.state_skipped': '已跳过',
+    'ui.state_pending': '等待中',
+    'step.check': '检查输入与空间',
+    'step.extract': '解包并校验游戏文件',
+    'step.lift': '把游戏代码重编译为 C',
+    'step.compile': '编译本机可执行文件',
+    'step.prepare': '检查并收尾',
+    'step.cleanup': '清理临时文件',
 }
 
 
@@ -154,14 +195,15 @@ def installed_state(dest):
 
 
 class Catalog(BaseCatalog):
-    """The window's text: the shared catalog's English strings with this port's strings on top, then TEXT_ZH for a
-    Chinese window. The base class reads installer/text/<lang>.json, which this port does not ship, so its table is
-    replaced here rather than extended."""
+    """The window's text: the shared catalog's strings, this port's strings on top, and TEXT_ZH for a Chinese window.
+
+    The base table (installer/text/en.json) carries the ids this port does not override, so it must be kept: replacing
+    it leaves ids such as ui.browse and ui.version untranslated, and the window then shows the raw ids."""
 
     def set_language(self, lang):
         self.lang = lang if lang in ('en', 'zh-Hans') else 'en'
-        self.english = dict(TEXT)
-        self.texts = dict(TEXT) if self.lang == 'en' else {**TEXT, **TEXT_ZH}
+        self.english = {**load_texts('en'), **TEXT}
+        self.texts = dict(self.english) if self.lang == 'en' else {**self.english, **TEXT_ZH}
 
     def __init__(self, lang='en'):
         self.set_language(lang)
