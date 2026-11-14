@@ -15,11 +15,11 @@
 // uint64_t nn::os::GetSystemTickFrequency(): 19.2 MHz, the rate rt_ticks() counts at.
 static void ov_tick_frequency(Cpu *c) { ret_x(c, CNTFRQ_HZ); }
 
-// TOTK_CLOCK_DIAG=1: the rate rt_ticks really advances at against the host's wall clock, once a second. A guest clock
+// UO_CLOCK_DIAG=1: the rate rt_ticks really advances at against the host's wall clock, once a second. A guest clock
 // that runs fast is the first thing to rule out when a game's animation plays too quickly or its waits expire at once.
 static void clock_diag(void) {
     static int on = -1;
-    if (on < 0) { const char *e = cfg_value("TOTK_CLOCK_DIAG"); on = e && *e && strcmp(e, "0"); }
+    if (on < 0) { const char *e = cfg_value("UO_CLOCK_DIAG"); on = e && *e && strcmp(e, "0"); }
     if (!on) return;
     static uint64_t last_tick, last_ns;
     static int lines;

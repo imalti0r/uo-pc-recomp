@@ -79,7 +79,7 @@ const int rt_game_id=1, rt_game_version=200;
 static const char *output, *scale;
 static unsigned char page[4096];
 static int enabled[2];
-const char *cfg_value(const char *key) { return !strcmp(key,"TOTK_WINDOW_SIZE") ? output : scale; }
+const char *cfg_value(const char *key) { return !strcmp(key,"UO_WINDOW_SIZE") ? output : scale; }
 int rt_patch_set(const char *name) { return !strcmp(name,"engage_output") ? 0 : !strcmp(name,"engage_scene") ? 1 : -1; }
 void rt_patch_switch(int set,int on) { assert(set>=0 && set<2); enabled[set]=on; }
 void *rt_patch_page(void) { return page; }

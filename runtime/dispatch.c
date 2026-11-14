@@ -32,7 +32,7 @@ static struct __attribute__((aligned(64))) {
     uintptr_t anchor;
     uint64_t lo;
     uint64_t slots;
-    uint64_t noabort_lo, noabort_hi;   // TOTK_NOABORT: guest range of the diag abort functions
+    uint64_t noabort_lo, noabort_hi;   // UO_NOABORT: guest range of the diag abort functions
     uint64_t wrap_lo, wrap_hi;         // ... and of the SDK abort wrapper (armed on the first swallow)
     int arm_wrapper;
 } D;
@@ -172,8 +172,8 @@ void rt_dispatch_init(const RtModule *mods, int count) {
     D.anchor = anchor;
     D.lo = lo;
     D.slots = slots;
-    {   // TOTK_NOABORT: the guest range of nn::diag::detail::{VAbortImpl,Abort} (rt_dispatch diverts them)
-        const char *na = cfg_get("TOTK_NOABORT");
+    {   // UO_NOABORT: the guest range of nn::diag::detail::{VAbortImpl,Abort} (rt_dispatch diverts them)
+        const char *na = cfg_get("UO_NOABORT");
         if (na && *na && *na != '0') {
             uint64_t a = ldr_symbol("_ZN2nn4diag6detail10VAbortImplEPKcS3_S3_iPKNS_6ResultEPKNS_2os17UserExceptionInfoES3_RSt9__va_list");
             uint64_t b = ldr_symbol("_ZN2nn4diag6detail5AbortEPKNS_6ResultE");
@@ -190,7 +190,7 @@ void rt_dispatch_init(const RtModule *mods, int count) {
                 }
             }
             D.arm_wrapper = hi2 != 0;
-            if (hi2) rt_log("dispatch: TOTK_NOABORT diverting guest range %#llx..%#llx", (unsigned long long)lo2,
+            if (hi2) rt_log("dispatch: UO_NOABORT diverting guest range %#llx..%#llx", (unsigned long long)lo2,
                             (unsigned long long)hi2);
         }
     }
@@ -246,7 +246,7 @@ static __attribute__((noinline)) void dispatch_preempt(Cpu *c) {
 void rt_dispatch(Cpu *c) {
     if (__builtin_expect(c->thread && kern_preempt_pending(c->thread), 0))
         __attribute__((musttail)) return dispatch_preempt(c);
-    // TOTK_NOABORT: a direct call into the diag abort functions (bypassing the call-slot observer) must not
+    // UO_NOABORT: a direct call into the diag abort functions (bypassing the call-slot observer) must not
     // run their ud2; divert the dispatch to a bare return. On the first swallow also arm the SDK's abort
     // wrapper f_0x70000011bc (main+0x11bc, the noreturn stub the caller tail-jumps into) - nn::init runs
     // through that region, so it must stay live until the first real abort.
@@ -255,7 +255,7 @@ void rt_dispatch(Cpu *c) {
         static int n_divert;
         if (n_divert++ < 8) {
             char at[128];
-            rt_log("diag: direct abort call swallowed (TOTK_NOABORT) from %s", ldr_describe(c->x[30], at, sizeof at));
+            rt_log("diag: direct abort call swallowed (UO_NOABORT) from %s", ldr_describe(c->x[30], at, sizeof at));
         }
         c->pc = c->x[30];
         __attribute__((musttail)) return rt_dispatch(c);

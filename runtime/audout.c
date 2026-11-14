@@ -93,7 +93,7 @@ static void silent_clock(void *user) {
     }
 }
 static void gain(AudioOut *a) {
-    double pct = cfg_double("TOTK_VOLUME");
+    double pct = cfg_double("UO_VOLUME");
     if (pct < 0) pct = 0; if (pct > 100) pct = 100;
     plat_mutex_lock(&a->lock); float volume = a->volume; plat_mutex_unlock(&a->lock);
     if (a->stream) SDL_SetAudioStreamGain(a->stream, volume * (float)(pct / 100));
@@ -103,8 +103,8 @@ static AudioOut *output_new(uint32_t rate, uint32_t channels) {
     if (!a) rt_fatal("audout: allocation failed");
     a->rate = rate; a->channels = channels; a->volume = 1;
     a->event = kern_event_new();
-    const char *mode = cfg_get("TOTK_AUDIO");
-    if (!(mode && !strcmp(mode, "none")) && !cfg_get("TOTK_AUDIO_OFF")) {
+    const char *mode = cfg_get("UO_AUDIO");
+    if (!(mode && !strcmp(mode, "none")) && !cfg_get("UO_AUDIO_OFF")) {
         a->sdl = SDL_InitSubSystem(SDL_INIT_AUDIO);
         if (a->sdl) {
             SDL_AudioSpec spec = {SDL_AUDIO_S16, (int)channels, (int)rate};

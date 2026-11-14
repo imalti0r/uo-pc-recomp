@@ -1,0 +1,5 @@
+/* The application manifest of uo.exe (uo.manifest) and its icon (uo.ico, also the icon of UO-Setup.exe and of
+   the installer window). tools/build_game.py compiles it with the runtime objects, so it is also a member of
+   libuort.a, which the release links with --whole-archive. */
+1 24 "uo.manifest"
+1 ICON "uo.ico"

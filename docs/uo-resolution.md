@@ -29,7 +29,7 @@ window_size = 1920x1080
 render_scale = game
 ```
 
-`TOTK_WINDOW_SIZE` and `TOTK_RENDER_SCALE` environment variables override the file.
+`UO_WINDOW_SIZE` and `UO_RENDER_SCALE` environment variables override the file.
 A window size that is not one of the six 16:9 sizes Engage draws (1280×720 …
 3840×2160) makes the game use the nearest smaller one. Invalid scales or
 percentages outside 50–150 fall back to Game. Window scaling, FSR presentation

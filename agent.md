@@ -31,15 +31,15 @@
 
 ### 2026-11-15 分辨率与帧率
 - **分辨率**：UO 自身固定 1080p 渲染（游戏内多处尺寸源，只补丁两处会白屏/错位），改为 present 链放大：
-  `TOTK_OUTPUT_RES` 1280x720..3840x2160，`TOTK_UPSCALER=fsr|bilinear|dlss`，`TOTK_DLSS_MODE=auto|dlaa|quality|balanced|performance|ultra`。
+  `UO_OUTPUT_RES` 1280x720..3840x2160，`UO_UPSCALER=fsr|bilinear|dlss`，`UO_DLSS_MODE=auto|dlaa|quality|balanced|performance|ultra`。
   `auto` 按输出尺寸选精确比例（1440p→Quality x1.5=2880x1620，1800p→Balanced x1.72=3310x1862，2160p→Performance x2=3840x2160）。
   实装：runtime/resolution.c 的 uo_apply/res_uo_sizes、vk_dlss.cpp 支持 game_id 3 + mode_auto、ui/menu.cpp 的行、uo_setup/launcher.py 的 output_res 行。
   DLSS 需要 upscalers/streamline/ 下的 4 个 DLL（sl.interposer/sl.common/sl.dlss/nvngx_dlss）。
 - **帧率**：战场 3500 draws/帧时 replay 70ms、帧时 100ms（10 fps）。根因 = `runtime/vk_exec.c` 的 walk 对**每个 op** 调
-  `cfg_bool("TOTK_DRAW_DIAG")`，而 cfg_bool 每次规范化键名并线性扫整张设置表。改为缓存的 `vk_exec_draw_diag()`，并把
-  `TOTK_VP_DIAG`/`TOTK_RT_DIAG` 同样缓存成 vp_diag()/rt_diag()。replay 70ms → 3.0ms，战场 21.6 → 58.6 fps。
-- **诊断工具**：`TOTK_REPLAY_TIME=1`（环境变量）打印每帧 replay 分阶段耗时（mirror/usnap/walk/ops）。
-- **截图工具**：`TOTK_PRESENT_SHOT=<path>` + `TOTK_PRESENT_SHOT_FRAME=<n>` 截交换链（含 DLSS/FSR 输出），`--shot` 只能截游戏纹理。
+  `cfg_bool("UO_DRAW_DIAG")`，而 cfg_bool 每次规范化键名并线性扫整张设置表。改为缓存的 `vk_exec_draw_diag()`，并把
+  `UO_VP_DIAG`/`UO_RT_DIAG` 同样缓存成 vp_diag()/rt_diag()。replay 70ms → 3.0ms，战场 21.6 → 58.6 fps。
+- **诊断工具**：`UO_REPLAY_TIME=1`（环境变量）打印每帧 replay 分阶段耗时（mirror/usnap/walk/ops）。
+- **截图工具**：`UO_PRESENT_SHOT=<path>` + `UO_PRESENT_SHOT_FRAME=<n>` 截交换链（含 DLSS/FSR 输出），`--shot` 只能截游戏纹理。
 
 
 ### 2026-11-14 Task 7 修复：StandardAllocator 64 KiB 对齐
@@ -59,7 +59,7 @@
 - **修复**（`runtime/gfx_shader.c`）：新增 4096 项失败哈希表 `failed_set`，
   `translate_one` 开头 `failed_has()` 直接返回 NULL，失败时 `failed_add()`。
   帧率恢复 57 fps。
-- 附带：`TOTK_SHADER_DUMP=1` 保留失败着色器的 `.code` 文件便于分析。
+- 附带：`UO_SHADER_DUMP=1` 保留失败着色器的 `.code` 文件便于分析。
 
 ## 🔑 已知遗留问题
 
@@ -70,7 +70,7 @@
 - 加载画面不再卡死，但部分特效可能缺失。优先级低。
 
 ### 渲染 pass 的 draws 全为 0（诊断线索）
-- `TOTK_DUMP` 抓帧显示所有 pass `draws 0`，但这是**加载画面/过场**的正常状态
+- `UO_DUMP` 抓帧显示所有 pass `draws 0`，但这是**加载画面/过场**的正常状态
   （游戏在播影片或等 IO），不是 bug。
 
 ## 📜 Archive
@@ -99,7 +99,7 @@
 ### 构建与运行
 - 构建：`.venv\Scripts\python tools\build_uo.py --jobs 8` → `build/uo-v105/uo.exe`
 - 运行：`cd build\uo-v105; .\uo.exe --seconds N --shot shots\x.png`
-- 输入脚本：`TOTK_INPUT_SCRIPT=tools/input/uo_title.txt`（格式：`<帧> <按键> <持续帧>`）
-- 抓帧：`TOTK_DUMP=<frame>` → `dump/passes.txt` + `pass_*.png`
-- 关键开关：`TOTK_POOL_ALIGN`（1=连存储一起移，会白屏，仅对比用）、
-  `TOTK_POOL_ADDR_ALIGN`（默认 1，只对齐回报地址）、`TOTK_SHADER_DUMP`
+- 输入脚本：`UO_INPUT_SCRIPT=tools/input/uo_title.txt`（格式：`<帧> <按键> <持续帧>`）
+- 抓帧：`UO_DUMP=<frame>` → `dump/passes.txt` + `pass_*.png`
+- 关键开关：`UO_POOL_ALIGN`（1=连存储一起移，会白屏，仅对比用）、
+  `UO_POOL_ADDR_ALIGN`（默认 1，只对齐回报地址）、`UO_SHADER_DUMP`

@@ -44,7 +44,7 @@ def fix_tcl_paths():
 class App:
     catalog_type = Catalog
     ui_languages = UI_LANGUAGES
-    icon_name = 'totk.ico'
+    icon_name = 'uo.ico'
 
     def __init__(self, root, ui_lang, layout, run_args=None):
         self.root, self.layout = root, layout
@@ -66,7 +66,7 @@ class App:
 
         root.title(self.cat('ui.title'))
         icon = layout.runtime / self.icon_name
-        png = layout.runtime / 'totk.png'   # Tk loads no .ico off Windows; the Linux release converts it
+        png = layout.runtime / 'uo.png'   # Tk loads no .ico off Windows; the Linux release converts it
         if os.name == 'nt' and icon.is_file():
             root.iconbitmap(default=str(icon))
         elif png.is_file():
@@ -501,14 +501,14 @@ class App:
 
 # ---- self test ---------------------------------------------------------------------------------------------------
 
-SAMPLE_START = {'type': 'start', 'release': 'selftest', 'mode': 'install', 'dest': 'Z:/selftest/TotK', 'log': 'D:\\log.txt',
+SAMPLE_START = {'type': 'start', 'release': 'selftest', 'mode': 'install', 'dest': 'Z:/selftest/UO', 'log': 'D:\\log.txt',
                 'steps': ['check', 'extract', 'lift', 'compile', 'prepare', 'cleanup']}
 SAMPLE_RUN = [
     SAMPLE_START,
     {'type': 'plan', 'run': ['check', 'extract'], 'skip': {}},
     {'type': 'step', 'step': 'check', 'state': 'started'},
     {'type': 'progress', 'step': 'check', 'phase': 'inputs'},
-    {'type': 'space', 'dest': 'Z:/selftest/TotK', 'need': 36_400_000_000, 'free': 210_000_000_000, 'temp': 'C:\\t',
+    {'type': 'space', 'dest': 'Z:/selftest/UO', 'need': 36_400_000_000, 'free': 210_000_000_000, 'temp': 'C:\\t',
      'temp_need': 0, 'temp_free': 0, 'same_disk': True},
     {'type': 'warning', 'id': 'warn.lang_needs_fonts', 'params': {'lang': 'ko'}},
     {'type': 'step', 'step': 'check', 'state': 'done', 'seconds': 12.0},
@@ -559,9 +559,9 @@ def selftest(layout, shots=None):
             app.ui_var.set(lang)
             app.switch_language()
             tag = lang
-            app.vars['dest'].set('Z:/selftest/TotK')
-            app.vars['base'].set('Z:/selftest/totk.xci')
-            app.vars['update'].set('Z:/selftest/totk-1.2.1.nsp')
+            app.vars['dest'].set('Z:/selftest/UO')
+            app.vars['base'].set('Z:/selftest/uo.xci')
+            app.vars['update'].set('Z:/selftest/uo-1.0.5.nsp')
             app.vars['keys'].set('Z:/selftest/prod.keys')
             app.show('form')
             app.start()   # missing files: shows the problems
@@ -587,14 +587,14 @@ def selftest(layout, shots=None):
             app.model = Model()
             for e in SAMPLE_OK:
                 app.model.apply(e)
-            app.model.dest = 'Z:/selftest/TotK'
+            app.model.dest = 'Z:/selftest/UO'
             app.model.finish(0)
             app.refresh_finish()
             app.show('finish')
             shot(f'finish-ok-{tag}')
             app.model = Model()
             for e in SAMPLE_RUN[:3] + [{'type': 'error', 'id': 'check.disk_space', 'step': 'check',
-                                        'params': {'path': 'Z:/selftest/TotK', 'need_gb': 36.4, 'free_gb': 20.1}},
+                                        'params': {'path': 'Z:/selftest/UO', 'need_gb': 36.4, 'free_gb': 20.1}},
                                        {'type': 'end', 'result': 'failed', 'seconds': 3}]:
                 app.model.apply(e)
             app.model.finish(1)

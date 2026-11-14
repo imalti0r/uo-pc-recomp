@@ -158,14 +158,14 @@ class LauncherGuiTest(unittest.TestCase):
 
     def test_play_requests_foreground_for_the_child_without_changing_parent_environment(self):
         from types import SimpleNamespace
-        previous = os.environ.get('TOTK_LAUNCH_FOREGROUND')
+        previous = os.environ.get('UO_LAUNCH_FOREGROUND')
         child = SimpleNamespace(pid=12345, poll=lambda: None)
         with patch.object(self.app, 'require_idle'), \
              patch('engage_setup.launcher_gui.subprocess.Popen', return_value=child) as start, \
              patch('ctypes.windll.user32.AllowSetForegroundWindow', return_value=True) as allow:
             self.app.play()
-        self.assertEqual(start.call_args.kwargs['env']['TOTK_LAUNCH_FOREGROUND'], '1')
-        self.assertEqual(os.environ.get('TOTK_LAUNCH_FOREGROUND'), previous)
+        self.assertEqual(start.call_args.kwargs['env']['UO_LAUNCH_FOREGROUND'], '1')
+        self.assertEqual(os.environ.get('UO_LAUNCH_FOREGROUND'), previous)
         allow.assert_called_once_with(child.pid)
 
     def test_backup_action_copies_saves_and_setup_opens_from_same_launcher(self):

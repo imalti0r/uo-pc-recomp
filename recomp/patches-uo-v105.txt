@@ -14,7 +14,7 @@
 # Only the immediates are replaced. x22, which the two instructions between the first pair set up, stays untouched;
 # x16 is call-clobbered and holds nothing live at either site.
 build main 9c3116f0333ea157526612d17354b3755737c4f2
-set uo_output TOTK_UO_OUTPUT 0
+set uo_output UO_OUTPUT 0
 site uo_output main 005e3a4c d280f018 @page:x16 f9402218
 site uo_output main 005e3a58 f2c08718 d503201f
 site uo_output main 005e3bbc 52808704 @page:x16 b9404604

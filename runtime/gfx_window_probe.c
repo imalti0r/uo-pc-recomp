@@ -1,6 +1,6 @@
 // --probe-window: presents 300 frames of a cycling clear colour through vk_present_image, reads the swapchain image back
 // and compares every pixel, measures the vsync rate, flips the focus state and drives the cursor release with synthetic
-// window events (the window back end's wsys_probe_*, gfx_wsys.h) and resizes the window. Run with TOTK_VK_VALIDATION=1
+// window events (the window back end's wsys_probe_*, gfx_wsys.h) and resizes the window. Run with UO_VK_VALIDATION=1
 // to count validation errors.
 #include <stdio.h>
 #include <string.h>
@@ -140,7 +140,7 @@ static int present_and_check(Source *s, int first, int i, int *w_out, int *h_out
         if (mismatch && s->srgb) {
             // sRGB conversion rounds by one byte; FSR's half-float EASU/RCAS adds a few more.
             const uint8_t *got = (const uint8_t *)&p[k], *expected = (const uint8_t *)&e;
-            int tolerance = !strcmp(cfg_value("TOTK_UPSCALER"), "fsr") ? 3 : 1;
+            int tolerance = !strcmp(cfg_value("UO_UPSCALER"), "fsr") ? 3 : 1;
             mismatch = 0;
             for (int j = 0; j < 4; j++)
                 if ((int)got[j] - expected[j] > (j == 3 ? 0 : tolerance) ||
@@ -219,10 +219,10 @@ int probe_window(void) {
         if (!source_create(&srgb, srgb_formats[f])) return fail("sRGB source image");
         for (int i = 0; i < 8; i++)
             if (present_and_check(&srgb, i == 0, 17 + i * 19, &w, &h)) return fail("sRGB display encoding");
-        cfg_set("TOTK_COLOR_GAMMA", "2");
+        cfg_set("UO_COLOR_GAMMA", "2");
         srgb.gamma = 2.0f;
         if (present_and_check(&srgb, 0, 63, &w, &h)) return fail("sRGB colour adjustment");
-        cfg_set("TOTK_COLOR_GAMMA", "1");
+        cfg_set("UO_COLOR_GAMMA", "1");
         source_destroy(&srgb);
     }
     printf("probe-window: RGBA/BGRA sRGB display bytes and colour adjustment preserved\n");

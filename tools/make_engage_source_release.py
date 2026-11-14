@@ -38,7 +38,7 @@ def audit_member(name, data, regular=True):
     # This unchanged upstream logo is licensed source artwork, not an extracted game icon.
     reviewed_screenshot = name in REVIEWED_SCREENSHOTS and hashlib.sha256(data).hexdigest() == REVIEWED_SCREENSHOTS[name]
     reviewed_art = name in LAUNCHER_ART and hashlib.sha256(data).hexdigest() == LAUNCHER_ART[name]
-    if suffix in BINARY_SUFFIXES and name != 'runtime/totk.ico' and not reviewed_screenshot and not reviewed_art:
+    if suffix in BINARY_SUFFIXES and name != 'runtime/uo.ico' and not reviewed_screenshot and not reviewed_art:
         raise ValueError(f'Binary, log or unreviewed artwork: {name}')
     if len(data) > MAX_BYTES:
         raise ValueError(f'Source entry exceeds content-guard limit: {name}')

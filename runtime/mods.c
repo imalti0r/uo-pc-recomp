@@ -47,7 +47,7 @@ static char *token(const char *name) {
     return out;
 }
 static int disabled(const char *id) {
-    const char *value = cfg_get("TOTK_MODS_DISABLED");
+    const char *value = cfg_get("UO_MODS_DISABLED");
     if (!value) return 0;
     size_t n = strlen(id);
     for (const char *p = value; *p;) {
@@ -201,9 +201,9 @@ int mods_get(int i, ModInfo *out) {
 }
 void mods_set_enabled(int i, int enabled) {
     init();
-    if (i < 0 || i >= count || !list[i].supported || cfg_from_env("TOTK_MODS_DISABLED")) return;
+    if (i < 0 || i >= count || !list[i].supported || cfg_from_env("UO_MODS_DISABLED")) return;
     list[i].enabled = enabled != 0;
-    const char *old = cfg_get("TOTK_MODS_DISABLED");
+    const char *old = cfg_get("UO_MODS_DISABLED");
     size_t cap = (old ? strlen(old) : 0) + strlen(list[i].token) + 2, n = 0;
     char *value = grow(NULL, cap);
     value[0] = 0;
@@ -222,7 +222,7 @@ void mods_set_enabled(int i, int enabled) {
         memcpy(value + n, list[i].token, len); n += len;
     }
     value[n] = 0;
-    cfg_set("TOTK_MODS_DISABLED", value);
+    cfg_set("UO_MODS_DISABLED", value);
     free(value);
 }
 int mods_restart_required(void) {

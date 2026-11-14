@@ -37,7 +37,7 @@ def main():
     icon = output / 'engage-runtime.ico'
     setup_icon(icon)
     resource = output / 'engage.rc'
-    content = f'''1 24 "{(ROOT / 'runtime' / 'totk.manifest').as_posix()}"
+    content = f'''1 24 "{(ROOT / 'runtime' / 'uo.manifest').as_posix()}"
 1 ICON "{icon.as_posix()}"
 1 VERSIONINFO
 FILEVERSION 0,1,0,0
@@ -63,9 +63,9 @@ END
 '''
     build_game.write_if_changed(resource, content)
     original_sources = build_game.runtime_sources
-    build_game.runtime_sources = lambda skip=(): [resource if p.name == 'totk.rc' else p for p in original_sources(skip)]
+    build_game.runtime_sources = lambda skip=(): [resource if p.name == 'uo.rc' else p for p in original_sources(skip)]
     build_game.APP_ICON = icon
-    old_ini, new_ini = output / 'totk.ini', output / 'engage.ini'
+    old_ini, new_ini = output / 'uo.ini', output / 'engage.ini'
     if old_ini.exists() and not new_ini.exists():
         shutil.copy2(old_ini, new_ini)
     build_game.EXE = 'engage.exe'
@@ -79,7 +79,7 @@ END
     build_game.main()
     output = Path(sys.argv[sys.argv.index('--out') + 1]) if '--out' in sys.argv else ROOT / 'build' / 'engage-v200'
     if '--compile-only' not in sys.argv:
-        for name in ('totk_xlate.exe', 'totk_xlate.id'):
+        for name in ('uo_xlate.exe', 'uo_xlate.id'):
             source = extra.translator / name
             if source.is_file():
                 shutil.copy2(source, output / name)

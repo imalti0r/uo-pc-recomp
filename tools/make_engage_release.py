@@ -1,4 +1,4 @@
-"""Bundle an Engage setup candidate, never a compiled game or user data.
+"""Bundle a Unicorn Overlord setup candidate, never a compiled game or user data.
 
 Run with Python 3.14. Downloads use the upstream release builder's pinned hashes.
 The shader translator must have been built locally from the attributed source.
@@ -34,7 +34,7 @@ def tcltk_files():
         cabinets.append((struct.unpack_from('<I', data, pos + 8)[0], pos))
         pos = data.find(b'MSCF\0\0\0\0', pos + 1)
     size, pos = max(cabinets)
-    work = upstream.WORK / 'engage-tcltk'
+    work = upstream.WORK / 'uo-tcltk'
     work.mkdir(parents=True, exist_ok=True)
     cab = work / 'container.cab'
     cab.write_bytes(data[pos:pos + size])
@@ -60,7 +60,7 @@ def setup_icon(path):
 
 
 def copy_sources(out):
-    for directory in ('recomp', 'installer', 'engage_setup', 'tools'):
+    for directory in ('recomp', 'installer', 'uo_setup', 'tools'):
         target = out / directory
         if not target.resolve().is_relative_to(out.resolve()):
             raise ValueError('Setup source folder is a link outside the bundle')
@@ -69,13 +69,13 @@ def copy_sources(out):
     public = subprocess.check_output(['git', '-C', str(ROOT), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'])
     for name in public.decode().split('\0'):
         relative = Path(name)
-        if not name or relative.parts[0] not in ('runtime', 'recomp', 'installer', 'engage_setup', 'tools'):
+        if not name or relative.parts[0] not in ('runtime', 'recomp', 'installer', 'uo_setup', 'tools'):
             continue
         source = ROOT / relative
         if source.suffix.lower() not in {'.py', '.c', '.cc', '.cpp', '.h', '.hpp', '.json', '.ps1', '.txt',
                                         '.manifest', '.inl', '.glsl', '.comp', '.spv', '.inc'} and relative.as_posix() not in {
-                'runtime/ui/fonts/Roboto-Medium.ttf', 'engage_setup/art/cathedral.jpg',
-                'engage_setup/art/title.webp', 'engage_setup/art/README.md'}:
+                'runtime/ui/fonts/Roboto-Medium.ttf', 'uo_setup/art/cathedral.jpg',
+                'uo_setup/art/title.webp', 'uo_setup/art/README.md'}:
             continue
         target = out / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -125,7 +125,7 @@ def build(out, channel='dev'):
     (out / 'SOURCE_COMMIT').write_text(commit + '\n', encoding='utf-8')
     binary = out / 'bin'
     binary.mkdir(exist_ok=True)
-    for name in ('totk_xlate.exe', 'totk_xlate.id'):
+    for name in ('uo_xlate.exe', 'uo_xlate.id'):
         shutil.copy2(ROOT / 'build/xlate' / name, binary / name)
     depsbin = out / 'runtime/deps/bin'
     depsbin.mkdir(exist_ok=True)
@@ -143,51 +143,56 @@ def build(out, channel='dev'):
     clang = out / 'llvm/bin/clang.exe'
     upstream.run([clang, '-O2', '-I' + str(out / 'runtime/deps/include'),
                   ROOT / 'installer/hostcheck.c', '-o', binary / 'hostcheck.exe'])
-    setup_icon(out / 'runtime/engage-setup.ico')
-    work = ROOT / 'build/release/engage-launcher'
+    setup_icon(out / 'runtime/uo-setup.ico')
+    work = ROOT / 'build/release/uo-launcher'
     work.mkdir(exist_ok=True)
-    (work / 'launcher.rc').write_text(f'1 ICON "{(out / "runtime/engage-setup.ico").as_posix()}"\n1 24 "{(ROOT / "runtime/totk.manifest").as_posix()}"\n')
+    (work / 'launcher.rc').write_text(f'1 ICON "{(out / "runtime/uo-setup.ico").as_posix()}"\n1 24 "{(ROOT / "runtime/uo.manifest").as_posix()}"\n')
     upstream.run([out / 'llvm/bin/llvm-windres.exe', work / 'launcher.rc', '-O', 'coff', '-o', work / 'launcher.o'])
-    upstream.run([clang, '-O2', '-mwindows', '-municode', ROOT / 'engage_setup/launcher_win.c', work / 'launcher.o', '-o', out / 'Engage-Launcher.exe'])
-    (out / 'Engage-Setup.exe').unlink(missing_ok=True)
-    runtime_build = ROOT / 'build/release/engage-public-runtime'
-    upstream.run([out / 'python/python.exe', '-I', out / 'tools/build_engage.py', '--runtime-only',
+    upstream.run([clang, '-O2', '-mwindows', '-municode', ROOT / 'uo_setup/launcher_win.c', work / 'launcher.o', '-o', out / 'UO-Launcher.exe'])
+    (out / 'UO-Setup.exe').unlink(missing_ok=True)
+    # This port links the lifted game code into one uo.exe, so a prebuilt executable would carry game code and must
+    # never ship. Setup compiles uo.exe from the player's own files instead. What is checked here is that the runtime
+    # sources and the shipped toolchain build: libuort.a is compiled into a scratch folder and left out of the bundle.
+    runtime_build = ROOT / 'build/release/uo-runtime-check'
+    upstream.run([out / 'python/python.exe', '-I', out / 'tools/build_uo.py', '--runtime-only',
                   '--out', runtime_build, '--runtime', out / 'runtime', '--toolchain', out / 'llvm',
                   '--deps', out / 'runtime/deps', '--ninja', binary / 'ninja.exe', '--jobs', '8'], cwd=out)
-    for name in ('engage.exe', 'engage.json'):
-        shutil.copy2(runtime_build / name, binary / name)
-    upstream.run([binary / 'engage.exe', '--probe-menu-font'], env=upstream.clean_env(depsbin))
+    if not (runtime_build / 'libuort.a').is_file():
+        raise ValueError('The bundled runtime did not build')
     licenses(out)
-    (out / 'START-HERE.txt').write_text('Engage PC Recomp — experimental setup\n\n'
-        '1. Extract this entire ZIP into a folder.\n2. Run Engage-Launcher.exe and choose Setup / Update.\n'
-        '3. Choose your own base game, update 2.0.0, prod.keys and extracted firmware folder.\n'
+    (out / 'START-HERE.txt').write_text(
+        'Unicorn Overlord PC Recomp - experimental setup\n\n'
+        '1. Extract this entire ZIP into a folder.\n'
+        '2. Run UO-Launcher.exe and choose Setup / Update.\n'
+        '3. Choose your own base game, update 1.05, prod.keys and an extracted firmware folder.\n'
         '4. Optionally add either DLC package and title.keys, then choose a separate install folder.\n'
         '5. Select Install. When it finishes, Setup switches to the launcher in your game folder.\n'
         '   You can then delete the original extracted setup folder. Keep .launcher with the game.\n'
         '6. Use the launcher for settings, RomFS mods and save backups.\n\n'
-        'Requirements: Windows 10/11 x64, AVX2 CPU, Vulkan 1.3 GPU/driver, 40 GiB free.\n'
-        'Setup builds engage_game.dll locally and uses the included public runtime. No game files or keys are included.\n'
-        'First install may take 20–60 minutes. Shaders cache during play.\n'
+        'Requirements: Windows 10/11 x64, AVX2 CPU, Vulkan 1.3 GPU/driver, 20 GiB free.\n'
+        'Setup compiles the game from your own files and uses the included public runtime.\n'
+        'No game files or keys are included.\n'
+        'First install may take 20-60 minutes. Shaders cache during play.\n'
         'Keep your original dumps. Saves/settings are in your chosen install folder.\n'
-        'Help: https://gitlab.com/engage-pc-recomp/engage-pc-recomp\n', encoding='utf-8')
-    upstream.run([out / 'python/python.exe', '-I', '-m', 'engage_setup', '--help'], env=upstream.clean_env())
-    with tempfile.TemporaryDirectory(prefix='engage-no-input-') as temp:
+        'Help: https://github.com/imalti0r/uo-pc-recomp\n', encoding='utf-8')
+    upstream.run([out / 'python/python.exe', '-I', '-m', 'uo_setup', '--help'], env=upstream.clean_env())
+    with tempfile.TemporaryDirectory(prefix='uo-no-input-') as temp:
         dest = Path(temp) / 'install'
-        result = subprocess.run([out / 'python/python.exe', '-I', '-m', 'engage_setup', '--dest', dest],
+        result = subprocess.run([out / 'python/python.exe', '-I', '-m', 'uo_setup', '--dest', dest],
                                 env=upstream.clean_env(), capture_output=True, text=True, timeout=30)
         events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith('{')]
         if result.returncode != 1 or not events or events[-1].get('result') != 'failed' or dest.exists():
             raise ValueError('The bundled missing-input failure check did not pass')
-    upstream.run([out / 'python/python.exe', '-I', '-m', 'engage_setup.gui', '--selftest'], env=upstream.clean_env())
-    upstream.run([out / 'python/python.exe', '-I', '-m', 'engage_setup.gui', '--setup', '--selftest'], env=upstream.clean_env())
+    upstream.run([out / 'python/python.exe', '-I', '-m', 'uo_setup.gui', '--selftest'], env=upstream.clean_env())
+    upstream.run([out / 'python/python.exe', '-I', '-m', 'uo_setup.gui', '--setup', '--selftest'], env=upstream.clean_env())
     for cache in sorted(out.rglob('__pycache__'), key=lambda p: len(p.parts), reverse=True):
         if not cache.resolve().is_relative_to(out):
             raise ValueError('Unexpected cache link outside setup')
         shutil.rmtree(cache)
-    forbidden = {'engage.exe', 'engage_game.dll', 'engage-install.json', 'config.local.toml', 'account.uid', 'engage.ini'}
+    forbidden = {'uo.exe', 'uo_game.dll', 'uo-install.json', 'config.local.toml', 'account.uid', 'uo.ini'}
     for file in out.rglob('*'):
         compiler_object = file.suffix.lower() == '.o' and file.is_relative_to(out / 'llvm')
-        public_runtime = file == binary / 'engage.exe'
+        public_runtime = file == binary / 'uo.exe'
         if file.name.lower() in forbidden and not public_runtime or \
                 file.suffix.lower() in ('.log', '.pdb', '.obj', '.o') and not compiler_object:
             raise ValueError(f'Private build artifact in setup: {file.relative_to(out)}')
@@ -213,7 +218,7 @@ def main():
         with zipfile.ZipFile(args.zip, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
             for file in sorted(out.rglob('*')):
                 if file.is_file() and '__pycache__' not in file.parts:
-                    archive.write(file, Path('Engage-Setup-' + (out / 'VERSION').read_text().strip() + '-windows') / file.relative_to(out))
+                    archive.write(file, Path('UO-Setup-' + (out / 'VERSION').read_text().strip() + '-windows') / file.relative_to(out))
         checksum = upstream.sha256_file(args.zip)
         (args.zip.parent / 'SHA256SUMS').write_text(f'{checksum}  {args.zip.name}\n', encoding='utf-8')
         print('SHA256', checksum, args.zip.name)

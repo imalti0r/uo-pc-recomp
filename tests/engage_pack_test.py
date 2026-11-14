@@ -23,7 +23,7 @@ class PackTest(unittest.TestCase):
             self.assertEqual(hashlib.sha256(image).hexdigest(), report['romfs_sha256'])
             for entry in report['files']:
                 self.assertEqual(image[entry['offset']:entry['offset'] + entry['size']], originals[entry['path']])
-            self.assertTrue(build_index(report).startswith(b'TOTKRFS1'))
+            self.assertTrue(build_index(report).startswith(b'UORFS1'))
             with self.assertRaises(ValueError):
                 pack(source, root / 'packed')
             with self.assertRaises(ValueError):

@@ -213,19 +213,19 @@ static void protect(uint64_t a, uint64_t n, int prot, const char *what) {
 // The process is re-run when a region is taken: Windows places DLLs, heaps and thread stacks at random addresses,
 // and a fresh process gets a fresh layout.
 static void reexec_or_fail(const char *what) {
-    const char *e = cfg_get("TOTK_REEXEC");
+    const char *e = cfg_get("UO_REEXEC");
     int n = e ? atoi(e) : 0;
     if (n >= REEXEC_LIMIT) rt_fatal("memory: %s is not free after %d attempts", what, n);
     char buf[16];
     snprintf(buf, sizeof buf, "%d", n + 1);
-    plat_setenv("TOTK_REEXEC", buf);
+    plat_setenv("UO_REEXEC", buf);
     plat_reexec();
 }
 
 void mem_init(void) {
     if (L.pool) return;
-    // TOTK_MEMSCAN=1: report the free runs under 4 GiB, to place the game's heap where it needs one.
-    const char *scan = cfg_get("TOTK_MEMSCAN");
+    // UO_MEMSCAN=1: report the free runs under 4 GiB, to place the game's heap where it needs one.
+    const char *scan = cfg_get("UO_MEMSCAN");
     if (scan && *scan) {
         uint64_t at = 0x10000, end = 0, best = 0, best_at = 0;
         while (at < 0x100000000ull) {
@@ -238,7 +238,7 @@ void mem_init(void) {
             at = end;
         }
         rt_logf("memscan largest free %#llx at %#llx", (unsigned long long)best, (unsigned long long)best_at);
-        rt_fatal("memory: TOTK_MEMSCAN done");
+        rt_fatal("memory: UO_MEMSCAN done");
     }
     // Fixed window: modules, kernel region, host-function addresses.
     mods_lo = MOD_MAIN_BASE;
@@ -253,7 +253,7 @@ void mem_init(void) {
     uint64_t low = 0, alias = 0;
     for (uint64_t at = LOW_SEARCH_FROM; at + LOW_SIZE <= mods_lo && !low; at += LOW_STEP) {
         if (reserve_at(at, LOW_SIZE, 1)) low = at;
-        else if (cfg_get("TOTK_MEMLOG")) rt_logf("memory: %#llx+%#llx is taken", (unsigned long long)at,
+        else if (cfg_get("UO_MEMLOG")) rt_logf("memory: %#llx+%#llx is taken", (unsigned long long)at,
                                                  (unsigned long long)LOW_SIZE);
     }
     if (!low) reexec_or_fail("a 6 GiB stack and heap block below 2^39");
@@ -264,10 +264,10 @@ void mem_init(void) {
     plat_mem_fault_hook(thaw_fault);   // before the crash handler
     alias_pages = calloc(ALIAS_PAGES, 1);
     if (!alias_pages) rt_fatal("memory: cannot allocate the alias page map");
-    // totk.ini is read here, once the address space is claimed and before the first setting: the pool size below
-    // depends on TOTK_APP_POOL and on the resolution settings (resolution.c decides them once, on this first call).
+    // uo.ini is read here, once the address space is claimed and before the first setting: the pool size below
+    // depends on UO_APP_POOL and on the resolution settings (resolution.c decides them once, on this first call).
     cfg_init();
-    const char *pool = cfg_get("TOTK_APP_POOL");
+    const char *pool = cfg_get("UO_APP_POOL");
     L = (RtGuestLayout){
         .aslr = {low, RT_ADDRESS_LIMIT - low},
         .stack = {low + STACK_OFF, STACK_SIZE},
@@ -277,7 +277,7 @@ void mem_init(void) {
         .hostfn = {RT_HOSTFN_BASE, RT_HOSTFN_SIZE},
         .pool = pool ? strtoull(pool, NULL, 0) : (RT_UO ? UO_POOL : DEFAULT_POOL) + res_heap_extra_bytes(),   // resolution.c
     };
-    if (!L.pool) rt_fatal("memory: TOTK_APP_POOL is 0");
+    if (!L.pool) rt_fatal("memory: UO_APP_POOL is 0");
 }
 
 const RtGuestLayout *mem_layout(void) { return &L; }

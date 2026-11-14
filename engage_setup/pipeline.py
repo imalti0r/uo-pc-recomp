@@ -252,7 +252,7 @@ class Pipeline:
                 shutil.copytree(source, target) if target.name == 'exefs' else shutil.move(str(source), str(target))
                 self.state.setdefault('assets', []).append(target.name)
                 write_json(self.dest / 'engage-install.json', self.state)
-        for pattern in ('*.dll', 'totk_xlate.*'):
+        for pattern in ('*.dll', 'uo_xlate.*'):
             for source in self.build.glob(pattern):
                 if source.name != 'engage_game.dll':
                     self.deploy(source)

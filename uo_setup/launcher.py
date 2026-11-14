@@ -64,7 +64,7 @@ def render_scale_value(text):
     if not RENDER_SCALE_MIN <= number <= RENDER_SCALE_MAX:
         return None
     return str(number)
-LINE = re.compile(r'^\s*(?:totk_)?([a-z0-9_]+)\s*=\s*(.*?)\s*$', re.I)
+LINE = re.compile(r'^\s*(?:uo_)?([a-z0-9_]+)\s*=\s*(.*?)\s*$', re.I)
 
 
 def row_visible(key, values):
@@ -80,7 +80,7 @@ def version_label(version, channel):
 def launch_game(dest):
     dest = Path(dest)
     process = subprocess.Popen([str(dest / 'uo.exe')], cwd=dest,
-                               env=dict(os.environ, TOTK_LAUNCH_FOREGROUND='1'))
+                               env=dict(os.environ, UO_LAUNCH_FOREGROUND='1'))
     if os.name == 'nt':
         import ctypes
         from ctypes import wintypes

@@ -79,7 +79,7 @@ def version_label(version, channel):
 def launch_game(dest):
     dest = Path(dest)
     process = subprocess.Popen([str(dest / 'engage.exe')], cwd=dest,
-                               env=dict(os.environ, TOTK_LAUNCH_FOREGROUND='1'))
+                               env=dict(os.environ, UO_LAUNCH_FOREGROUND='1'))
     if os.name == 'nt':
         import ctypes
         from ctypes import wintypes

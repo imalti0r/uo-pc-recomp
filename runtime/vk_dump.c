@@ -1,8 +1,8 @@
-// TOTK_DUMP=<frame>: a frame dump for the Vulkan back end, which RenderDoc cannot capture (it hides
+// UO_DUMP=<frame>: a frame dump for the Vulkan back end, which RenderDoc cannot capture (it hides
 // VK_EXT_external_memory_host). Between presents frame-1 and frame, the replay's command buffers also copy, after each
 // render pass, its colour and depth targets and, after each dispatch, the storage images it writes into host buffers;
 // the completion thread turns them into 8-bit PNGs once the submission is done. 3D textures (LUTs, volumes) sampled or
-// written in the frame are copied once each, slices side by side. Files in TOTK_DUMP_DIR (default "dump"):
+// written in the frame are copied once each, slices side by side. Files in UO_DUMP_DIR (default "dump"):
 //   pass_<seq>_t<i>_<w>x<h>_<vkformat>_<name>.png   colour target i (td: depth; img<slot>: storage image; lut<id>: 3D;
 //                                                    a BC target drawn through a block view: its blocks as that view)
 //   ..._tm.png                                       float formats: x/(1+x) of the same image (the plain one clamps)
@@ -11,17 +11,17 @@
 //   images.txt   per image: channel min/max, distinct texel values over the image and over its top quarter
 // Sampled 8-bit 2D textures up to TEX2D_CAP texels are copied once each as pass_<seq>_tex<id>_... at the end of the pass
 // that samples them; texture lines carry the storage address, mirror state, upload count and the image's and slot's
-// swizzle. Copies and texture clears are logged as "copy/clear after pass N". TOTK_DUMP_LOG=<from> also logs the
-// frames from..frame-1 to passes.txt, with PNGs only of targets up to 64K texels. TOTK_DUMP_BUF=<addr>:<size>[:...]
+// swizzle. Copies and texture clears are logged as "copy/clear after pass N". UO_DUMP_LOG=<from> also logs the
+// frames from..frame-1 to passes.txt, with PNGs only of targets up to 64K texels. UO_DUMP_BUF=<addr>:<size>[:...]
 // snapshots one GPU buffer range after every logged pass (buf_<pass>.bin and bufs.txt, see buf_snap).
 // PNGs are opaque (alpha dropped). Integer formats are scaled by the image maximum, depth by its min..max range, SNORM
 // as x/2+1/2, UNORM and sRGB bytes written as stored. Caps: MAX_PASSES passes copied, PNG_CAP bytes of PNGs.
-// TOTK_DUMP_TEX=<id>|<w>x<h>[,...]: those texture slots, or 2D textures of that size, are copied where first sampled,
+// UO_DUMP_TEX=<id>|<w>x<h>[,...]: those texture slots, or 2D textures of that size, are copied where first sampled,
 // whatever their format.
-// TOTK_DUMP_UBO=1: each listed pipeline also prints the first 16 vec4 of its user uniform blocks (c3 and up), read from
+// UO_DUMP_UBO=1: each listed pipeline also prints the first 16 vec4 of its user uniform blocks (c3 and up), read from
 // guest memory when the entry is listed. A block the submission rewrites with UpdateUniformBuffer shows its value from
 // before the submission (vk_exec_draw.c upd_note).
-// TOTK_DUMP_SKIP_RUNS=1: a render pass with the same targets as the render pass before it is logged but not copied
+// UO_DUMP_SKIP_RUNS=1: a render pass with the same targets as the render pass before it is logged but not copied
 // (the terrain decals draw one pass each into the G-buffer and would use up both caps).
 #include <math.h>
 #include <stdarg.h>
@@ -44,12 +44,12 @@
 #define TEX2D_CAP (1u << 20)        // texels of a sampled 2D texture that is dumped
 
 int vk_dump_armed;
-static uint64_t dump_frame, log_from;   // log_from: TOTK_DUMP_LOG, first frame logged to passes.txt without images
+static uint64_t dump_frame, log_from;   // log_from: UO_DUMP_LOG, first frame logged to passes.txt without images
 static char dir[400];
 static FILE *passes_f, *images_f;
 static int seq, finished, copied;      // copied: passes and dispatches of the dump frame whose images were copied
-static int skip_runs, dump_ubo;        // TOTK_DUMP_SKIP_RUNS, TOTK_DUMP_UBO
-static uint32_t want_tex[16][2];       // TOTK_DUMP_TEX: slot id and 0, or width and height
+static int skip_runs, dump_ubo;        // UO_DUMP_SKIP_RUNS, UO_DUMP_UBO
+static uint32_t want_tex[16][2];       // UO_DUMP_TEX: slot id and 0, or width and height
 static int nwant_tex;
 static uint64_t last_targets;          // targets_sig of the last render pass; 0 after a dispatch
 static const char *pass_skip;          // why the current pass copies nothing, or NULL
@@ -340,7 +340,7 @@ static const char *copy_out(VkExec *ex, VkImage image, VkFormat vf, VkImageAspec
     return copy_region(ex, image, vf, aspect, level, layer, 0, (VkExtent3D){w, h, d}, w, h, d, name);
 }
 
-// ---- TOTK_DUMP_BUF=<addr>:<size>[:<off>:<stride>:<w>:<h>]: after every pass and dispatch that is logged, the GPU
+// ---- UO_DUMP_BUF=<addr>:<size>[:<off>:<stride>:<w>:<h>]: after every pass and dispatch that is logged, the GPU
 // buffer range is copied to a host buffer; when it differs from the previous copy it goes to buf_<pass>.bin, and
 // bufs.txt gets the changed bytes' extent plus, with the grid arguments, one map per dword of the w x h records of
 // `stride` bytes at `off` (each record a letter: its value's index in the table under the map).
@@ -708,6 +708,86 @@ out:
     plat_mutex_unlock(&rec_lock);
 }
 
+// ---- UO_SKIP_DRAWS / UO_DRAW_LIST: telling which draw of a frame paints what
+// UO_SKIP_DRAWS=<first>[-<last>]: draws first..last of every frame (0-based, in submission order) are not recorded.
+// Bisecting that range says which draw paints something wrong when the frame itself cannot tell (two draws of one
+// pipeline can run with different scissors, which passes.txt's per-pipeline grouping hides).
+// UO_DRAW_LIST=1: every draw of the dumped frame goes to passes.txt as one line: index, primitive, count, viewport,
+// scissor, pass size and blend state.
+static long long skip_lo = -2, skip_hi = -2;   // -2: not read yet
+static long long draw_no;
+static uint64_t skip_frame;
+static int list_on = -1;
+
+long long vk_dump_draw_index(void) { return draw_no; }
+
+int vk_dump_skip_draw(void) {
+    if (skip_lo == -2) {
+        const char *e = cfg_get("UO_SKIP_DRAWS");
+        skip_lo = skip_hi = -1;
+        if (e && *e) {
+            char *end;
+            skip_lo = strtoll(e, &end, 10);
+            skip_hi = *end == '-' ? strtoll(end + 1, NULL, 10) : skip_lo;
+            rt_log("vk: UO_SKIP_DRAWS=%lld-%lld: those draws of every frame are not recorded", skip_lo, skip_hi);
+        }
+    }
+    uint64_t f = __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED);
+    if (f != skip_frame) skip_frame = f, draw_no = 0;   // the numbering is per frame
+    long long n = draw_no++;
+    return skip_lo >= 0 && n >= skip_lo && n <= skip_hi;
+}
+
+void vk_dump_draw_list(VkExec *ex, const p_draw *d, int idx) {
+    if (list_on < 0) {
+        const char *e = cfg_get("UO_DRAW_LIST");
+        list_on = e && *e && strcmp(e, "0") != 0;
+    }
+    if (!list_on || !active()) return;
+    plat_mutex_lock(&rec_lock);
+    fprintf(passes_f, "draw %03d: prim %d count %d first %d inst %d | viewport %g,%g %gx%g | scissor %s %d,%d %ux%u | "
+            "pass %ux%u | blend %s en %#x src %u dst %u\n", idx, d->prim, d->count, d->first, d->instances,
+            ex->has_vp ? ex->vp[0][0] : 0.0f, ex->has_vp ? ex->vp[0][1] : 0.0f, ex->has_vp ? ex->vp[0][2] : 0.0f,
+            ex->has_vp ? ex->vp[0][3] : 0.0f, ex->has_scissor ? "set" : "none",
+            ex->has_scissor ? ex->scissor.x : 0, ex->has_scissor ? ex->scissor.y : 0,
+            ex->has_scissor ? (unsigned)ex->scissor.w : 0, ex->has_scissor ? (unsigned)ex->scissor.h : 0,
+            ex->pass_w, ex->pass_h, ex->pipe.color.blend_en ? "on" : "off", (unsigned)ex->pipe.color.blend_en,
+            ex->pipe.blend[0].src_rgb, ex->pipe.blend[0].dst_rgb);
+    // The vertex data the draw reads: for a quad whose size is wrong, the positions and the streams' strides say
+    // whether the size comes from the vertices (then they are what is wrong) or from a uniform (then they are right).
+    for (int st = 0; st < 16; st++) {
+        const NVNbufferRange *r = &ex->vbuf[st];
+        if (!r->address || !r->size) continue;
+        int used = 0;
+        for (int i = 0; i < 16; i++) {
+            va_st a;
+            memcpy(&a, &ex->pipe.vattr[i], sizeof a);
+            if (a.fmt && a.stream == st) used = 1;
+        }
+        if (!used) continue;
+        const vs_st *v = &ex->pipe.vstream[st];
+        const float *f = (const float *)(uintptr_t)r->address;
+        uint64_t n = r->size / 4 < 12 ? r->size / 4 : 12;
+        fprintf(passes_f, "    stream %d stride %u:", st, v->stride);
+        for (uint64_t k = 0; k < n; k++) fprintf(passes_f, " %g", f[k]);
+        fprintf(passes_f, "\n");
+    }
+    // The user uniform blocks the vertex stage reads: a quad that should cover the screen but does not is usually
+    // scaled by a matrix here, so the numbers say whether the size comes from the vertices or from a block.
+    for (int st = 0; st < 2; st++)
+        for (int k = 0; k < 16; k++) {
+            const p_bind_buf *u = &ex->ubo[st][k];
+            if (!u->addr || !u->size) continue;
+            const float *f = (const float *)(uintptr_t)u->addr;
+            uint64_t n = u->size / 4 < 32 ? u->size / 4 : 32;
+            fprintf(passes_f, "    %s ubo c%d:", st ? "fs" : "vs", k + 3);
+            for (uint64_t j = 0; j < n; j++) fprintf(passes_f, " %g", f[j]);
+            fprintf(passes_f, "\n");
+        }
+    fflush(passes_f);
+    plat_mutex_unlock(&rec_lock);
+}
+
 static void target_line(VkExec *ex, const VkExecTarget *t, const char *tag, int n) {
     char fn[16], name[160];
     if (!t->image) {
@@ -881,21 +961,21 @@ out:
 static void make_dirs(char *path) { plat_file_mkdir_p(path); }
 
 void vk_dump_init(void) {
-    const char *e = cfg_get("TOTK_DUMP");
+    const char *e = cfg_get("UO_DUMP");
     if (!e || !*e || !(dump_frame = strtoull(e, NULL, 10))) return;
-    const char *lf = cfg_get("TOTK_DUMP_LOG");
+    const char *lf = cfg_get("UO_DUMP_LOG");
     if (lf && *lf) log_from = strtoull(lf, NULL, 10);
-    const char *sr = cfg_get("TOTK_DUMP_SKIP_RUNS");
+    const char *sr = cfg_get("UO_DUMP_SKIP_RUNS");
     skip_runs = sr && *sr && *sr != '0';
-    const char *du = cfg_get("TOTK_DUMP_UBO");
+    const char *du = cfg_get("UO_DUMP_UBO");
     dump_ubo = du && *du && *du != '0';
-    const char *wt = cfg_get("TOTK_DUMP_TEX");
+    const char *wt = cfg_get("UO_DUMP_TEX");
     for (char *q = (char *)wt; q && *q && nwant_tex < 16; q += *q == ',') {
         uint32_t *w = want_tex[nwant_tex++];
         w[0] = (uint32_t)strtoul(q, &q, 10);
         w[1] = *q == 'x' ? (uint32_t)strtoul(q + 1, &q, 10) : 0;
     }
-    const char *d = cfg_get("TOTK_DUMP_DIR");
+    const char *d = cfg_get("UO_DUMP_DIR");
     snprintf(dir, sizeof dir, "%s", d && *d ? d : "dump");
     make_dirs(dir);
     char path[600];
@@ -904,7 +984,7 @@ void vk_dump_init(void) {
     snprintf(path, sizeof path, "%s/images.txt", dir);
     images_f = fopen(path, "w");
     if (!passes_f || !images_f) rt_fatal("vk_dump: cannot write to %s", dir);
-    const char *bf = cfg_get("TOTK_DUMP_BUF");
+    const char *bf = cfg_get("UO_DUMP_BUF");
     if (bf && *bf) {
         char *q;
         bd_addr = strtoull(bf, &q, 0);

@@ -80,7 +80,7 @@ int plat_mem_read(uint64_t a,void *out,size_t n) { abort(); }
 static const char *setting, *legacy;
 static int enabled;
 static unsigned version;
-const char *cfg_get(const char *key) { return !strcmp(key,"TOTK_FPS_LIMIT") ? setting : legacy; }
+const char *cfg_get(const char *key) { return !strcmp(key,"UO_FPS_LIMIT") ? setting : legacy; }
 unsigned cfg_version(void) { return version; }
 int rt_patch_set(const char *name) { return !strcmp(name,"fps60") ? 0 : -1; }
 int rt_patch_enabled(int set) { return set==0 && enabled; }

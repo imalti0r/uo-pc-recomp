@@ -45,7 +45,7 @@ static void obs_vabort(Cpu *c) {
            ldr_describe(c->x[30], at, sizeof at));
 }
 
-// TOTK_NOABORT=1: swallow the SDK's diag aborts instead of dying. The movie player aborts at its teardown
+// UO_NOABORT=1: swallow the SDK's diag aborts instead of dying. The movie player aborts at its teardown
 // when the present-paced frame release stalls; the guest continues fine otherwise. The override path only
 // catches call-slot call sites, so also patch the two functions' first instruction to RET: the observer
 // fires first, then the guest body (now a bare 'ret') returns to the caller instead of hitting its ud2.
@@ -69,7 +69,7 @@ static void dump_recent(void) {
 }
 static void no_abort_check(void) {
     if (no_abort >= 0) return;
-    const char *e = cfg_get("TOTK_NOABORT");
+    const char *e = cfg_get("UO_NOABORT");
     no_abort = e && *e && *e != '0';
 }
 static void override_vabort(Cpu *c) {

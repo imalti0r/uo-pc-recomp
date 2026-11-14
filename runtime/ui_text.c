@@ -46,7 +46,7 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_ON] = "On", [UI_MENU_OFF] = "Off", [UI_MENU_AUTO] = "Automatic", [UI_MENU_DEFAULT_MARK] = "default",
     [UI_MENU_AFTER_RESTART] = "after restart", [UI_MENU_SET_BY_ENV] = "set by environment variable",
     [UI_MENU_SAVE_FAILED] = "could not save settings",
-    [UI_MENU_VERSION] = "TotK Recomp %s, game %s",
+    [UI_MENU_VERSION] = "Unicorn Overlord PC Recomp %s, game %s",
 
     [UI_MENU_FULLSCREEN] = "Fullscreen", [UI_MENU_FULLSCREEN_DESC] = "Fills the screen with the game; F11 toggles it.",
     [UI_MENU_WINDOW_SIZE] = "Window size", [UI_MENU_WINDOW_SIZE_DESC] = "Size of the game window when not fullscreen. Engage builds its display buffers at start, so a new size applies when the game next starts.",
@@ -335,7 +335,7 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_DEFAULT_MARK] = "по умолчанию",
     [UI_MENU_AFTER_RESTART] = "после перезапуска", [UI_MENU_SET_BY_ENV] = "задано переменной окружения",
     [UI_MENU_SAVE_FAILED] = "не удалось сохранить настройки",
-    [UI_MENU_VERSION] = "TotK Recomp %s, игра %s",
+    [UI_MENU_VERSION] = "Unicorn Overlord PC Recomp %s, игра %s",
 
     [UI_MENU_FULLSCREEN] = "Полный экран", [UI_MENU_FULLSCREEN_DESC] = "Игра на весь экран; F11 переключает режим.",
     [UI_MENU_WINDOW_SIZE] = "Размер окна", [UI_MENU_WINDOW_SIZE_DESC] = "Размер окна игры вне полноэкранного режима. Engage строит буферы дисплея при запуске, поэтому новый размер применяется при следующем запуске.",
@@ -634,7 +634,7 @@ static const char *const text_zh_hans[UI_TEXT_COUNT] = {
     [UI_MENU_ON] = "开", [UI_MENU_OFF] = "关", [UI_MENU_AUTO] = "自动", [UI_MENU_DEFAULT_MARK] = "默认",
     [UI_MENU_AFTER_RESTART] = "重启后生效", [UI_MENU_SET_BY_ENV] = "由环境变量设置",
     [UI_MENU_SAVE_FAILED] = "设置保存失败",
-    [UI_MENU_VERSION] = "TotK Recomp %s，游戏 %s",
+    [UI_MENU_VERSION] = "Unicorn Overlord PC Recomp %s，游戏 %s",
 
     [UI_MENU_FULLSCREEN] = "全屏", [UI_MENU_FULLSCREEN_DESC] = "让游戏铺满屏幕；F11 可切换。",
     [UI_MENU_WINDOW_SIZE] = "窗口大小", [UI_MENU_WINDOW_SIZE_DESC] = "非全屏时游戏窗口的大小。Engage 在启动时创建显示缓冲，因此新尺寸在下次启动时生效。",
@@ -906,10 +906,10 @@ const char *ui_text_in(const char *lang, UiTextId id) {
 
 const char *ui_text(UiTextId id) { return ui_text_in(ui_text_lang(ov_language()), id); }
 
-// The menu language, re-read when cfg_version changes. TOTK_MENU_LANG "en" / "ru" / "zh-Hans"; anything else
+// The menu language, re-read when cfg_version changes. UO_MENU_LANG "en" / "ru" / "zh-Hans"; anything else
 // (unset included) follows the system UI language: Russian for "ru", ..., Simplified Chinese for "zh", else English.
 static const char *resolve_menu_lang(void) {
-    const char *v = cfg_value("TOTK_MENU_LANG");
+    const char *v = cfg_value("UO_MENU_LANG");
     if (v && *v) {
         if (!strcmp(v, "ru")) return "ru";
         if (!strcmp(v, "en")) return "en";

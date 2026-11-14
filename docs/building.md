@@ -14,7 +14,7 @@ Versions are the ones the build was verified with; newer patch releases are fine
 |---|---|---|---|
 | MSYS2 UCRT64 | clang/lld 23.1.3 | msys2.org installer to `C:\msys64`, packages below | compiling the generated C and the runtime |
 | Visual Studio Build Tools | 2026, C++ workload, Windows SDK 10.0.26100 | winget `Microsoft.VisualStudio.BuildTools` with `--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended` | the linker .NET NativeAOT calls |
-| .NET SDK | 10.0 | winget `Microsoft.DotNet.SDK.10` | the shader translator (`totk_xlate.exe`) |
+| .NET SDK | 10.0 | winget `Microsoft.DotNet.SDK.10` | the shader translator (`uo_xlate.exe`) |
 | Vulkan SDK | 1.4.363 | winget `KhronosGroup.VulkanSDK` | validation layers, `vulkaninfo` |
 | uv | 0.13 | standalone installer from astral.sh | the two Python environments |
 | hactool | 1.4.0 @ `1d64a83` | `.venv\Scripts\python tools\build_hactool.py`, see below | NCA and update extraction |
@@ -75,14 +75,14 @@ of them.
    .venv-py314\Scripts\python tools\extract.py
    ```
 
-4. Shader translator (once; no game files). This publishes `build\xlate\totk_xlate.exe`:
+4. Shader translator (once; no game files). This publishes `build\xlate\uo_xlate.exe`:
 
    ```powershell
    .venv\Scripts\python tools\build_xlate.py
    ```
 
 5. Lift the modules to C, write the RomFS overlay (the frame-rate fix), then compile and link
-   `build\<ver>\totk.exe`:
+   `build\<ver>\uo.exe`:
 
    ```powershell
    .venv\Scripts\python recomp\gen.py --exefs build\extracted\<ver>\exefs --out generated\<ver> --patches recomp\patches-<ver>.txt
@@ -103,7 +103,7 @@ of them.
    `SDL3.dll`, `libiconv-2.dll` and `libopus-0.dll` next to the exe.
    For Xbox button prompts, run `make_romfs_patches.py` once more with `--xbox-prompts`: it writes
    `build\<ver>\romfs-patches-xbox` ([controls.md](controls.md), "Xbox button prompts"); `build_game.py` copies it next
-   to `totk.exe` like `romfs-patches`.
+   to `uo.exe` like `romfs-patches`.
 
 6. Prepare the shaders (once per build folder and translator). It needs `refs\MacNativeGames` (`tools\fetch_refs.sh`)
    for the shared shader list:
@@ -114,23 +114,23 @@ of them.
 
    Without this step the first launch compiles shaders and pipelines during play and stutters until the caches fill.
    The AMD driver keeps its pipeline cache per exe path and holds a limited amount: preparing another build folder can
-   evict this one's. `totk.exe --warm-shaders` rebuilds it from the shader cache.
+   evict this one's. `uo.exe --warm-shaders` rebuilds it from the shader cache.
 
-7. Run. The game keeps running when its window loses the focus (`assume_focus = 1` in `totk.ini`, the default; the
+7. Run. The game keeps running when its window loses the focus (`assume_focus = 1` in `uo.ini`, the default; the
    Game tab switches it). With 0 it pauses, as it does on the Switch when Home is pressed.
 
    ```powershell
-   build\<ver>\totk.exe
+   build\<ver>\uo.exe
    ```
 
-Settings live in `totk.ini` next to `totk.exe` ([totk.ini.example](../totk.ini.example) lists them). Saves go to
+Settings live in `uo.ini` next to `uo.exe` ([uo.ini.example](../uo.ini.example) lists them). Saves go to
 `build\profile` for `v121` and `build\profile-<ver>` for other versions (`build_game.py --profile` changes it).
 
 ### Portable folder
 
 `.venv\Scripts\python tools\package_build.py --version <ver>` writes `build\<ver>-portable`, which runs on another of
 your machines without MSYS2, Python or .NET. `romfs.bin` stays out unless you pass `--with-romfs`; otherwise put it in
-`romfs\` next to the exe or point `TOTK_ROMFS` at its folder. Run `totk.exe --prepare-shaders` once in the copied
+`romfs\` next to the exe or point `UO_ROMFS` at its folder. Run `uo.exe --prepare-shaders` once in the copied
 folder. The folder holds code and data derived from your game: for your own machines only.
 
 ## Linux (in progress)
@@ -154,8 +154,8 @@ Requirements:
   Vulkan Memory Allocator is a single header (AUR `vulkan-memory-allocator`). Without it, `build_game.py` fetches the
   version the Windows release pins (3.4.0) into `toolchain/vma/` on first use and checks its hash.
 
-The steps are the Windows ones with POSIX paths: `.venv/bin/python` in place of `.venv\Scripts\python`, and `totk` in
-place of `totk.exe`. `build_game.py` takes clang, lld and Ninja from PATH (or the ones in `<dir>/bin` with
+The steps are the Windows ones with POSIX paths: `.venv/bin/python` in place of `.venv\Scripts\python`, and `uo` in
+place of `uo.exe`. `build_game.py` takes clang, lld and Ninja from PATH (or the ones in `<dir>/bin` with
 `--toolchain <dir>`) and links against the system libraries, with `libstdc++` static and an `$ORIGIN` rpath;
 `build_hactool.py` builds `hactool` with make. `tools/prepare_shaders.py` reads the shader list from
 `refs/MacNativeGames` at `origin/HEAD`, which must be the pinned commit with its history (the list format changed later).
@@ -169,11 +169,11 @@ re-protecting imported memory invalidates the driver's userptr buffer on every s
 amdgpu), and importing pins the pages, which drops their write protection. Each CPU-visible pool therefore gets a
 host-visible copy (shadow storage, `runtime/vk_memory.c`): the pages the CPU wrote go in before each submit, and the GPU's
 writes come back at its fence. In play that costs about 0.2 ms a frame and doubles the memory of those pools (about
-1.1 GB). `TOTK_SHADOW=1` turns it on under Windows too. The Steam Deck's RADV has `VK_EXT_external_memory_host` as
+1.1 GB). `UO_SHADOW=1` turns it on under Windows too. The Steam Deck's RADV has `VK_EXT_external_memory_host` as
 well: the shadow copies are chosen for the measured cost above, not for a missing extension.
 
 The Deck's GPU (Van Gogh) has no native ASTC, so its textures go through the compute decoder (`runtime/vk_astc.c`,
-`TOTK_ASTC`) as on desktop AMD GPUs without it; frame times measured there include it.
+`UO_ASTC`) as on desktop AMD GPUs without it; frame times measured there include it.
 
 ## Checks
 
@@ -181,7 +181,7 @@ Before a commit:
 
 - `python tools/check_content.py --staged`: nothing game-derived is staged. CI runs the same check;
   `git config core.hooksPath .githooks` runs it before each local commit.
-- `build\<ver>\totk.exe --selftest`: layout, dispatch table and host-function registry, without game files.
+- `build\<ver>\uo.exe --selftest`: layout, dispatch table and host-function registry, without game files.
 
 The lifter (`recomp/`) and the CPU headers (`runtime/cpu.h`, `runtime/simd.h`) are checked against Unicorn. Every lifter
 change passes these, all run with `.venv`:
@@ -196,7 +196,7 @@ change passes these, all run with `.venv`:
 | `tests\excl_mt.py` | the exclusive monitor helpers under contention and ABA, on several threads | no |
 | `tests\jumptables_check.py` | `recomp/jumptables.py` against a Unicorn oracle; must report 0 disagreements, on 1.4.3 too | yes |
 
-Runtime probes, each a mode of `totk.exe` (the list is at the top of `runtime/main.c`): `--probe-kernel`,
+Runtime probes, each a mode of `uo.exe` (the list is at the top of `runtime/main.c`): `--probe-kernel`,
 `--probe-vkexec`, `--probe-nvn-tex` and `--probe-shader` cover most runtime changes. `--probe-shader` and the draw
 part of `--probe-vkexec` translate shaders of the census below: they look for `build/<ver>/shaders/jobs.json` of the
 exe's own version first, then of the other one.

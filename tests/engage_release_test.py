@@ -36,12 +36,12 @@ class ReleaseBoundaryTest(unittest.TestCase):
             audit_member('link', b'target', regular=False)
 
     def test_content_is_checked_even_under_a_safe_name(self):
-        marker = 'TOTK_RECOMP_' + 'GENERATED_FROM_GAME_CODE'
+        marker = 'UO_RECOMP_' + 'GENERATED_FROM_GAME_CODE'
         for content in (marker.encode(), ('title_key = ' + 'ab' * 16).encode(), b'NSO0' + bytes(32), b'MZ' + bytes(32)):
             with self.subTest(content=content[:8]), self.assertRaises(ValueError):
                 audit_member('tools/innocent.py', content)
         audit_member('runtime/audout.c', b'// Original host runtime source.\n')
-        audit_member('runtime/totk.ico', b'upstream source logo')
+        audit_member('runtime/uo.ico', b'upstream source logo')
 
 
 if __name__ == '__main__':

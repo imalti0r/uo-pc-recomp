@@ -123,5 +123,5 @@ def layout(root=None):
         deps=root / 'toolchain/engage/runtime/deps' if dev else root / 'runtime/deps',
         ninja=root / 'toolchain/engage/ninja.exe' if dev else root / 'bin/ninja.exe',
         extractor=root / 'toolchain/nx_extract/nx_extract.exe' if dev else root / 'bin/nx_extract/nx_extract.exe',
-        xlate=root / 'build/xlate/totk_xlate.exe' if dev else root / 'bin/totk_xlate.exe',
+        xlate=root / 'build/xlate/uo_xlate.exe' if dev else root / 'bin/uo_xlate.exe',
         hostcheck=root / 'build/release/engage-hostcheck.exe' if dev else root / 'bin/hostcheck.exe')

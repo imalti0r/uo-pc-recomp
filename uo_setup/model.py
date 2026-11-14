@@ -137,7 +137,7 @@ def layout(root=None):
         deps=root / 'toolchain/engage/runtime/deps' if dev else root / 'runtime/deps',
         ninja=root / 'toolchain/engage/ninja.exe' if dev else root / 'bin/ninja.exe',
         extractor=root / 'toolchain/nx_extract/nx_extract.exe' if dev else root / 'bin/nx_extract/nx_extract.exe',
-        xlate=root / 'build/xlate/totk_xlate.exe' if dev else root / 'bin/totk_xlate.exe',
+        xlate=root / 'build/xlate/uo_xlate.exe' if dev else root / 'bin/uo_xlate.exe',
         hostcheck=root / 'build/release/uo-hostcheck.exe' if dev else root / 'bin/hostcheck.exe')
 
 
@@ -153,7 +153,15 @@ def installed_state(dest):
     return 'done' if state.get('done') == list(STEP_ORDER[1:]) else None
 
 
-def Catalog():
-    table = dict(TEXT)
-    table.update(TEXT_ZH)
-    return BaseCatalog(table)
+class Catalog(BaseCatalog):
+    """The window's text: the shared catalog's English strings with this port's strings on top, then TEXT_ZH for a
+    Chinese window. The base class reads installer/text/<lang>.json, which this port does not ship, so its table is
+    replaced here rather than extended."""
+
+    def set_language(self, lang):
+        self.lang = lang if lang in ('en', 'zh-Hans') else 'en'
+        self.english = dict(TEXT)
+        self.texts = dict(TEXT) if self.lang == 'en' else {**TEXT, **TEXT_ZH}
+
+    def __init__(self, lang='en'):
+        self.set_language(lang)

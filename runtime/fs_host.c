@@ -25,7 +25,7 @@
 #include "platform/platform.h"
 #include "romfs_path.h"
 
-#define TOTK_APPLICATION_ID (RT_ENGAGE ? 0x0100a6301214e000ull : RT_FFRS ? 0x0100b8a026f14000ull : RT_UO ? 0x010054b01ad92000ull : 0x0100f2c0115b6000ull)
+#define UO_APPLICATION_ID (RT_ENGAGE ? 0x0100a6301214e000ull : RT_FFRS ? 0x0100b8a026f14000ull : RT_UO ? 0x010054b01ad92000ull : 0x0100f2c0115b6000ull)
 #define FILE_BASE 0x200000000ull
 #define DIR_BASE 0x300000000ull
 #define NFILES 1024
@@ -781,7 +781,7 @@ static uint32_t mount_save(const char *name, const uint64_t *uid) {
 
 static uint8_t save_exists(uint64_t application, const uint64_t *uid) {
     ready();
-    return application == TOTK_APPLICATION_ID && my_uid(uid);
+    return application == UO_APPLICATION_ID && my_uid(uid);
 }
 
 // Other titles' save data (data-link bonuses) is not present on this host.
@@ -1222,7 +1222,7 @@ static void ov_ensure_save(Cpu *c) {
     ready();
     ret_x(c, my_uid(arg_p(c, 0)) ? 0 : FS_R_TARGET_NOT_FOUND);
 }
-static void ov_save_exists_current(Cpu *c) { ret_x(c, save_exists(TOTK_APPLICATION_ID, arg_p(c, 0))); }
+static void ov_save_exists_current(Cpu *c) { ret_x(c, save_exists(UO_APPLICATION_ID, arg_p(c, 0))); }
 // Result GetSaveDataSize(int64_t *committed, int64_t *journal, const Uid &uid): the sizes the title declared. This port
 // stores saves in host directories with no quota, so the declaration the game reads back is its own numbers.
 static void ov_save_size(Cpu *c) {
@@ -1557,7 +1557,7 @@ static uint64_t probe_romfs(void) {
     CHECK(write_open == FS_R_UNSUPPORTED_OPEN && write_existing == FS_R_UNSUPPORTED_OPEN,
           "write open -> %#x/%#x, expected 0x6402", write_open, write_existing);
 
-    // Overlays (TOTK_ROMFS_PATCHES, TOTK_ROMFS_MODS): served in place of the original, added files and their folders
+    // Overlays (UO_ROMFS_PATCHES, UO_ROMFS_MODS): served in place of the original, added files and their folders
     // exist, bytes equal the overlay file.
     size_t nov = romfs_overlay_count(), ovok = 0;
     for (size_t k = 0; k < nov; k++) {
@@ -1772,7 +1772,7 @@ static void probe_save_tx(const uint64_t *uid) {
     committed = pending;
 
     // the read-only mount shows the committed save and refuses changes
-    CHECK(tx_write(a, 99) && RES(S_MOUNT_SAVE_RO, U("ro"), TOTK_APPLICATION_ID, U(uid)) == 0 &&
+    CHECK(tx_write(a, 99) && RES(S_MOUNT_SAVE_RO, U("ro"), UO_APPLICATION_ID, U(uid)) == 0 &&
           tx_read("ro:/tx_a.sav") == committed && RES(S_OPEN_FILE, U(&h), U("ro:/tx_a.sav"), FS_OPEN_WRITE) ==
           FS_R_UNSUPPORTED_OPEN && RES(S_CREATE_FILE, U("ro:/x"), 0) == FS_R_UNSUPPORTED_OPEN &&
           RES(S_RENAME_FILE, U("save:/tx_a.sav"), U("ro:/y")) == FS_R_INVALID_PATH, "MountSaveDataReadOnly");
@@ -1796,7 +1796,7 @@ static void probe_save_tx(const uint64_t *uid) {
 static void probe_storage(void) {
     char tmp[PLAT_PATH_MAX * 3], dir[PLAT_PATH_MAX * 3 + 64];
     need(plat_temp_dir(tmp, sizeof tmp), "temporary directory");
-    snprintf(dir, sizeof dir, "%s/totk-probe-fs-%u", tmp, plat_process_id());
+    snprintf(dir, sizeof dir, "%s/uo-probe-fs-%u", tmp, plat_process_id());
     remove_tree(dir);
     fs_host_set_profile(dir);
     uint64_t uid[2], other[2], h = 0, h2 = 0, d = 0, l = 0;
@@ -1812,9 +1812,9 @@ static void probe_storage(void) {
     CHECK(RES(S_MOUNT_SAVE, U("save"), U(other)) == FS_R_TARGET_NOT_FOUND, "MountSaveData for another user");
     CHECK(RES(S_MOUNT_SAVE, U("save"), U(uid)) == 0, "MountSaveData");
     CHECK(RES(S_MOUNT_SAVE, U("save"), U(uid)) == FS_R_ALREADY_EXISTS, "MountSaveData twice");
-    CHECK((CALL(S_SAVE_EXISTS, TOTK_APPLICATION_ID, U(uid)) & 0xff) == 1 &&
-          (CALL(S_SAVE_EXISTS, TOTK_APPLICATION_ID + 0x1000, U(uid)) & 0xff) == 0, "IsSaveDataExisting");
-    CHECK(RES(S_MOUNT_SAVE_RO, U("other"), TOTK_APPLICATION_ID + 0x1000, U(uid)) == FS_R_TARGET_NOT_FOUND,
+    CHECK((CALL(S_SAVE_EXISTS, UO_APPLICATION_ID, U(uid)) & 0xff) == 1 &&
+          (CALL(S_SAVE_EXISTS, UO_APPLICATION_ID + 0x1000, U(uid)) & 0xff) == 0, "IsSaveDataExisting");
+    CHECK(RES(S_MOUNT_SAVE_RO, U("other"), UO_APPLICATION_ID + 0x1000, U(uid)) == FS_R_TARGET_NOT_FOUND,
           "MountSaveDataReadOnly of another title");
     CHECK(!fs_save_busy(), "idle at start");
 

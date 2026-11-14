@@ -59,7 +59,9 @@ def plan_inputs(data, keys, title_keys):
     """The base and update packages to read. A combined cartridge dump (input.xci) holds both."""
     xci = input_path(data, 'xci', optional=True)
     if xci:
-        found = {(t, k): v for k, t, v in contents(run_tool(keys, ['--contents', xci], 'identity-xci', title_keys))}
+        # contents() yields (kind, title, version); the checks below look a package up by (kind, title).
+        found = {(kind, title): version for kind, title, version in
+                 contents(run_tool(keys, ['--contents', xci], 'identity-xci', title_keys))}
         if ('Application', TITLE) not in found:
             raise ValueError(f'The combined XCI does not hold the base game {TITLE.upper()}')
         if ('Patch', UPDATE) not in found:

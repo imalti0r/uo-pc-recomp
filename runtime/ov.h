@@ -10,7 +10,7 @@
 // ---- ov_system.c
 int ov_probe_exit_sections(void);
 int ov_probe_network_account(void);
-int ov_handheld(void);                     // TOTK_OPERATION_MODE=handheld (default docked); fatal on another value
+int ov_handheld(void);                     // UO_OPERATION_MODE=handheld (default docked); fatal on another value
 void ov_operation_mode_flip(void);         // report the other console mode for a second: the game rebuilds its display
 int ov_op_flipped(void);                   // whether that flip is in effect right now
 int ov_operation_mode_flip_ended(void);    // true once, at the moment the flip ends

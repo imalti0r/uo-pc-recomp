@@ -1,6 +1,6 @@
-// totk.ini: file-backed defaults for the TOTK_* environment variables (docs/controls.md, totk.ini.example).
+// uo.ini: file-backed defaults for the UO_* environment variables (docs/controls.md, uo.ini.example).
 // Format: "key = value" lines, '#' or ';' at the start of a line begins a comment, [sections] only group. A key is a
-// variable name without "TOTK_" (an optional TOTK_ prefix is accepted), case-insensitive. A value is the rest of the
+// variable name without "UO_" (an optional UO_ prefix is accepted), case-insensitive. A value is the rest of the
 // line, trimmed, optionally in double quotes; an empty value counts as unset. The environment wins over the file.
 //
 // Live settings: cfg_set changes a value in memory (readers see the new pointer; the old string is kept, so a pointer
@@ -15,8 +15,8 @@
 #include "host.h"
 #include "platform/platform.h"
 
-#define PREFIX "TOTK_"
-#define PREFIX_LEN 5
+#define PREFIX "UO_"
+#define PREFIX_LEN 3
 #define CFG_MAX_KEYS 512
 
 typedef struct { char *key, *value; int dirty, removed; } CfgEntry;   // key upper-case, without the prefix; value NULL after cfg_reset
@@ -46,7 +46,7 @@ static const char *const known[] = {
     "POOL_ADDR_ALIGN", "POOL_ALIGN", "PREWARM_XLATE", "PROBE_MOVIE", "PROBE_MOVIE_SHOT", "PROFILE", "PROFILE_CHAINS", "PROFILE_DIR", "PROFILE_FRAMES",
     "PROFILE_MAIN", "PROFILE_RENDER", "PRESENT_SHOT", "PRESENT_SHOT_FRAME", "PUSH_SKIP", "PUSH_STAGE", "RDOC", "RDOC_DIR", "RDOC_DLL", "REALTIME", "REC_END", "REEXEC",
     "RENDER_SCALE", "REPLAY_ASYNC",
-    "REPLAY_CHECK", "REPLAY_TIME", "RESOLVE_CHECK", "ROMFS", "ROMFS_INDEX", "ROMFS_MMAP", "ROMFS_MODS", "ROMFS_PATCHES",
+    "REPLAY_CHECK", "REPLAY_TIME", "SKIP_DRAWS", "DRAW_LIST", "RESOLVE_CHECK", "ROMFS", "ROMFS_INDEX", "ROMFS_MMAP", "ROMFS_MODS", "ROMFS_PATCHES",
     "ROMFS_PROOF_DIR", "ROMFS_VERIFY", "RUMBLE", "RUMBLE_CURVE", "RUMBLE_STRENGTH", "RUMBLE_TRIGGERS", "SHADER_CACHE",
     "SHADER_MEMO", "SHARED_FONTS", "SHARPNESS", "SHOTS", "SHOTS_DIR", "SHOTS_FULL", "SPEED_PROBE", "ANISO", "TEX_LOD_BIAS", "SPIN", "SPIN_HANDOFF_US", "SPLIT_DRAWS", "SPLIT_US", "STICK_DEADZONE", "SWKBD_ANSWER",
     "SWKBD_TEST", "TEST_PAD", "TEST_PREPARE_SHADERS", "TEX_ALIAS", "TEX_MEMO", "TEX_VRAM_PRESSURE", "TIMER_1MS", "TRACE", "UBO_SNAPSHOT", "UPSCALER", "VK_DYN_A2C", "VK_DYN_VERTEX", "VK_NO_FLOAT64", "VP_DIAG", "RT_DIAG",
@@ -54,7 +54,7 @@ static const char *const known[] = {
     "WB_EXACT", "WB_FENCE_LIMIT", "WINDOW_SIZE", "XLATE", "XLATE_ID", "XLATE_PROCS", "ZSTD_CHECK", "ZSTD_NATIVE",
 };
 
-// The totk.ini section a key cfg_set may write goes to when the file lacks it (totk.ini.example's sections).
+// The uo.ini section a key cfg_set may write goes to when the file lacks it (uo.ini.example's sections).
 static const struct { const char *key, *section; } sections[] = {
     {"MODS_DISABLED", "mods"},
     {"FPS_LIMIT", "frame rate"}, {"FPS60", "frame rate"},
@@ -220,8 +220,8 @@ int cfg_load(const char *path) {
     return 1;
 }
 
-// ---- device profiles: defaults for a known machine, below the environment and totk.ini and above the table, so any
-// key the player sets wins and resetting a key in the menu returns to the profile's value. TOTK_DEVICE_PROFILE = auto
+// ---- device profiles: defaults for a known machine, below the environment and uo.ini and above the table, so any
+// key the player sets wins and resetting a key in the menu returns to the profile's value. UO_DEVICE_PROFILE = auto
 // (default: the Steam Deck when the firmware says so), desktop (none) or deck.
 //
 // The Steam Deck (LCD Jupiter, OLED Galileo; 1280x800, 16:10, 4 Zen 2 cores, RDNA 2 with 8 CUs sharing 16 GB): the game
@@ -286,7 +286,7 @@ const char *cfg_get(const char *name) {
     return NULL;
 }
 
-// Whether name's value comes from the player (the environment or totk.ini), not a profile or the table.
+// Whether name's value comes from the player (the environment or uo.ini), not a profile or the table.
 int cfg_is_set(const char *name) { return raw_get(name) != NULL; }
 
 unsigned cfg_version(void) { return __atomic_load_n(&version, __ATOMIC_ACQUIRE); }
@@ -465,7 +465,7 @@ static void put(Out *o, const char *s, size_t n) {
     if (o->n + n + 1 > o->cap) {
         o->cap = (o->n + n + 1) * 2;
         o->buf = realloc(o->buf, o->cap);
-        if (!o->buf) rt_fatal("cfg: out of memory writing totk.ini");
+        if (!o->buf) rt_fatal("cfg: out of memory writing uo.ini");
     }
     memcpy(o->buf + o->n, s, n);
     o->n += n;
@@ -513,7 +513,7 @@ int cfg_save_to(const char *path) {
     // after[i]: entries to write after line i (-1 = none); replace[i]: the entry whose value line i now carries
     int *replace = malloc(sizeof(int) * ((size_t)nl + 1)), *after_key = malloc(sizeof(int) * (size_t)(n + 1));
     char *drop = calloc((size_t)nl + 1, 1);   // lines of a reset key
-    if (!lines || !replace || !after_key || !drop) rt_fatal("cfg: out of memory writing totk.ini");
+    if (!lines || !replace || !after_key || !drop) rt_fatal("cfg: out of memory writing uo.ini");
     for (int i = 0, at = 0; i < nl; i++) {
         size_t start = (size_t)at;
         while ((uint64_t)at < size && text[at] != '\n') at++;
@@ -648,13 +648,13 @@ static void load_ini(void) {
     for (int i = 0; i < n_entries; i++) {
         char var[128];
         snprintf(var, sizeof var, PREFIX "%s", entries[i].key);
-        if (getenv(var)) rt_log("cfg: %s is set in the environment and overrides totk.ini", var);
+        if (getenv(var)) rt_log("cfg: %s is set in the environment and overrides uo.ini", var);
     }
 }
 
 void cfg_init(void) {
     load_ini();
     if (profile_of())
-        rt_log("cfg: device profile Steam Deck: defaults for the keys totk.ini does not set (TOTK_DEVICE_PROFILE=desktop "
+        rt_log("cfg: device profile Steam Deck: defaults for the keys uo.ini does not set (UO_DEVICE_PROFILE=desktop "
                "turns it off)");
 }

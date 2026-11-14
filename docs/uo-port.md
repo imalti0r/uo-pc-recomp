@@ -6,7 +6,7 @@ a full playthrough and longer sessions still need testing.
 The inherited installer, extraction commands, and default build targets still target TotK. Do not feed Engage
 containers to tools/extract.py or use TotK's patch files on Engage.
 
-Engage-specific [resolution and 3D render-scale controls](engage-resolution.md)
+Engage-specific [resolution and 3D render-scale controls](uo-resolution.md)
 have separate output/scene settings, require a restart and use the Engage patch table.
 
 ## Post-battle exploration movement at 60 FPS
@@ -191,7 +191,7 @@ build\engage-v200\engage.exe --boot
 
 Skip packing when its completed image/index already exist; the packer rejects overwrites.
 The build is incremental. No generated C or game-derived data is committed. Existing
-runtime setting names (TOTK_* and totk.ini) are retained during bring-up.
+runtime setting names (UO_* and uo.ini) are retained during bring-up.
 
 For the Unity shader survey, run the reference tool with `DM_GAME=0100A6301214E000`,
 `PYTHONUTF8=1`, and `PYTHONDONTWRITEBYTECODE=1`, passing the verified RomFS, ExeFS/main,
@@ -278,7 +278,7 @@ reuse also tracks the sampler binding. The synthetic reflection/binding checks,
 
 `bindings-startup.log`: 351 frames, exit 0, no reported shader failures or skipped
 draws; 12 seconds of the game clock, about 19.7 wall seconds. `bindings.png` visibly
-shows the opening movie at 1920x1080. These tests use `TOTK_VK_RECORDER=0`; this is
+shows the opening movie at 1920x1080. These tests use `UO_VK_RECORDER=0`; this is
 an experimental setting, not proof the earlier recorder crash is fixed. The previous
 black captures are retained for comparison. Both docked and handheld input probes pass.
 
@@ -388,7 +388,7 @@ The Windows icon is generated in the ignored build directory from the user's ext
 `icon.jpg`, with seven sizes from 16 to 256 pixels. Neither the game artwork nor the
 resulting icon is tracked. The Engage build emits its own resource file and retains
 the existing UTF-8 and DPI manifest. Settings and rotating logs use `engage.ini` and
-`engage.log`; the build preserves an existing `totk.ini` by copying it to `engage.ini`
+`engage.log`; the build preserves an existing `uo.ini` by copying it to `engage.ini`
 only when the latter does not exist. The existing Run-Engage.cmd launcher still applies.
 Shared TotK engine source names and environment-variable interfaces remain compatible.
 

@@ -335,7 +335,7 @@ int ipc_svc(Cpu *c, uint32_t imm) {
 // use: sm: -> audren:u -> GetWorkBufferSize -> an audio renderer with the null mixer, whose frame event the probe
 // times while it sends RequestUpdate every frame. A child process checks the unknown-service fatal.
 #define PROBE_FRAMES 200
-#define PROBE_CHILD_ENV "TOTK_PROBE_IPC_CHILD"
+#define PROBE_CHILD_ENV "UO_PROBE_IPC_CHILD"
 #define PROBE_UNKNOWN_SERVICE "lm"
 #define H_CURRENT_PROCESS 0xFFFF8001u
 
@@ -461,7 +461,7 @@ static uint32_t get_service(Cpu *c, uint32_t sm, const char *name, int tipc) {
     return r.nmove ? r.move[0] : 0;
 }
 
-// A TotK-like renderer: 48 kHz, 240-sample (5 ms) frames, final mix plus submixes, two sinks, REV11.
+// A UO-like renderer: 48 kHz, 240-sample (5 ms) frames, final mix plus submixes, two sinks, REV11.
 static const AudrenParameter g_param = {
     .sample_rate = 48000, .sample_count = 240, .mix_buffer_count = 24, .submix_count = 8, .voice_count = 192,
     .sink_count = 2, .effect_count = 12, .revision = AUDREN_REV(11)};

@@ -41,7 +41,7 @@ size_t romfs_overlay_count(void);
 int romfs_xbox_prompts_ready(void);                        // romfs-patches-xbox was there at start
 int romfs_xbox_prompts_active(void);                       // and was loaded (pad_layout = xbox_prompts at start)
 const char *romfs_overlay(size_t k, const char **file, uint64_t *size, int *is_added);   // RomFS path of overlay k
-void fs_trace(const char *what, const char *path);         // TOTK_TRACE=fs: one line per open
+void fs_trace(const char *what, const char *path);         // UO_TRACE=fs: one line per open
 
 uint32_t romfs_list(const char *path, int (*cb)(const char *, int, uint64_t, void *), void *ctx);
 int fs_aoc_indices(int *out, int offset, int count);

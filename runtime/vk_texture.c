@@ -90,7 +90,7 @@ static Tex *rel_head, *rel_tail;   // released entries in release order (sweep_r
 static uint64_t n_uploads, n_reuploads;
 // Re-uploads since the last perf line (tex_lock): all, and those of textures a WriteTexels wrote since their last upload.
 static uint64_t ru_n, ru_bytes, ru_ns, ru_wt_n, ru_wt_bytes, ru_wt_ns;
-// TOTK_TEX_ALIAS (default on; =0: a new image over live storage starts empty): a new descriptor over the storage of a
+// UO_TEX_ALIAS (default on; =0: a new image over live storage starts empty): a new descriptor over the storage of a
 // live image that the GPU wrote gets that image's content (alias_copy). Counts since the last log line.
 static int tex_alias = -1;
 static uint64_t n_alias_copied, n_alias_upload, n_alias_uninit;
@@ -168,7 +168,7 @@ static int same_but_swizzle(const TexKey *a, const TexKey *b) {
 // upload is one-shot because the first GPU write sets gpu_owned and stops re-uploads.
 static int tex_mirrored(const tex_t *t) {
     if (!t->mem) return 0;
-    // TOTK_TEX_MIRROR_CUBE (default 0): cube maps stay GPU-owned. A cube map is filled by the engine's own capture
+    // UO_TEX_MIRROR_CUBE (default 0): cube maps stay GPU-owned. A cube map is filled by the engine's own capture
     // pass, never by the guest writing pool bytes; the bytes at its address are whatever the previous user of that
     // pool left there, and uploading them as a one-shot mirror paints the sky with that stale content (FFRS: the six
     // faces showed the top-left quadrant of the scene buffer). Checked before the layout shortcut: a cube map with a
@@ -360,14 +360,14 @@ static Tex *create_tex(const tex_t *t, const TexKey *k, int defer_init) {
                             .samples = (VkSampleCountFlagBits)samples, .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = usage,
                             .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
     int bw, bh, block_views = 0;
-    // TOTK_BLOCK_VIEWS_3D (default 0): a 3D BC image also gets block views. On RDNA2 cards (driver 26.10.1, issue #5)
+    // UO_BLOCK_VIEWS_3D (default 0): a 3D BC image also gets block views. On RDNA2 cards (driver 26.10.1, issue #5)
     // the 32x32x32 BC4 volume the game creates at the logo, made BLOCK_TEXEL_VIEW_COMPATIBLE and 2D_ARRAY_COMPATIBLE,
     // took a GPU write just past the end of its memory: device lost at the first submit after it when the image ended
     // its memory block. Draws into a 3D BC image go through a stand-in instead (vk_exec.c bc_target).
     static int bv3d = -1;
     if (bv3d < 0) {
         bv3d = rt_knob("BLOCK_VIEWS_3D", "0");
-        rt_log("vk: 3D BC textures %s (TOTK_BLOCK_VIEWS_3D=%d)", bv3d ? "get block views (renderable)" : "have no block views",
+        rt_log("vk: 3D BC textures %s (UO_BLOCK_VIEWS_3D=%d)", bv3d ? "get block views (renderable)" : "have no block views",
                bv3d);
     }
     if (!ds && samples == 1 && f.vk == f.ideal && nvn_fmt_bpb(d->format, &bw, &bh) && bw == 4 && bh == 4 &&
@@ -535,7 +535,7 @@ static void sweep_released(void) {
     while (nreleased > RELEASED_MAX && rel_head) destroy_tex(rel_head);
 }
 
-// TOTK_TEX_VRAM_PRESSURE (percent of the device-local budget, default 90; 0 = off): above it, each submit drops up to
+// UO_TEX_VRAM_PRESSURE (percent of the device-local budget, default 90; 0 = off): above it, each submit drops up to
 // PRESSURE_STEP of the oldest released entries, so a 4 GiB card does not keep RELEASED_MAX released images (each ASTC
 // one decoded to RGBA8) while the heap spills into system memory. A few per submit, for the reason above. Only entries
 // that come back intact are dropped: mirrored ones the GPU never wrote, re-uploaded from their storage. A render target
@@ -547,7 +547,7 @@ static uint64_t n_pressure_drops;
 
 static void sweep_pressure(void) {   // tex_lock held
     if (vram_pressure < 0) {
-        const char *s = cfg_get("TOTK_TEX_VRAM_PRESSURE");
+        const char *s = cfg_get("UO_TEX_VRAM_PRESSURE");
         vram_pressure = s && *s ? atoi(s) : 90;
         if (vram_pressure < 0 || vram_pressure > 100) vram_pressure = 90;
         rt_log("vk: released textures under VRAM pressure: %s%d%%", vram_pressure ? "dropped above " : "off", vram_pressure);
@@ -595,7 +595,7 @@ static void shrink_rgb(int format, const uint8_t *src, uint8_t *dst, size_t n) {
     for (size_t i = 0; i < n; i++, src += 4 * e, dst += 3 * e) memcpy(dst, src, 3 * e);
 }
 
-// TOTK_ASTC=check: the compute decoder's texels of n regions (gpu: the regions one after the other) against
+// UO_ASTC=check: the compute decoder's texels of n regions (gpu: the regions one after the other) against
 // astc_decode_ldr of the same raw blocks (raw: the staging bytes the regions point into).
 static void astc_check(const Tex *e, const uint8_t *raw, const VkAstcRegion *ar, int n, const uint8_t *gpu) {
     static volatile int32_t n_bad;
@@ -635,7 +635,7 @@ static void astc_check(const Tex *e, const uint8_t *raw, const VkAstcRegion *ar,
                (unsigned long long)n_texels, (unsigned long long)n_diff_tex);
 }
 
-// Staging bytes of one part of a texture upload decoded or copied on the CPU (see upload). With TOTK_ASTC=cpu a
+// Staging bytes of one part of a texture upload decoded or copied on the CPU (see upload). With UO_ASTC=cpu a
 // large ASTC array decodes to RGBA8 in one go: a staging buffer of 676682336 bytes failed (-2) on an Intel UHD with
 // 8 GB of shared memory and the game closed before the title screen.
 #define UPLOAD_PART (32ull << 20)   // fits the staging pool (vk_staging takes up to half of its 64 MiB block)
@@ -770,7 +770,7 @@ static int fills_no_page(const Tex *e) {
 }
 
 // A texture that fills no page keeps a copy of its storage bytes from when a GPU write to it was recorded
-// (vk_texture_gpu_written), up to SNAP_MAX bytes; wb_exact (TOTK_WB_EXACT, default on) enables it.
+// (vk_texture_gpu_written), up to SNAP_MAX bytes; wb_exact (UO_WB_EXACT, default on) enables it.
 enum { SNAP_MAX = 4096 };
 static int wb_exact = -1;
 static volatile int32_t n_kept;
@@ -781,7 +781,7 @@ static volatile int32_t n_kept;
 // camera renders the ID, screen rect and depth of what is under the reticle into 4x4 targets of 512 bytes, two
 // slots used in turn, and the CPU reads them a frame later. One slot's rect target shares its page with data the CPU
 // writes every frame: without the copy its renders were never written back, the game read a zero rect every other
-// frame and the target's name label blinked. TOTK_WB_EXACT=0 restores the page-only decision.
+// frame and the target's name label blinked. UO_WB_EXACT=0 restores the page-only decision.
 static int storage_rewritten(const Tex *e, uint32_t since, uint32_t *now) {
     uint64_t lo = (e->pub.addr + 0xfff) & ~0xfffull, hi = (e->pub.addr + e->t.L.size) & ~0xfffull;
     if (hi <= lo) lo = e->pub.addr, hi = e->pub.addr + e->t.L.size;
@@ -823,7 +823,7 @@ static void make_fresh_snap(Tex *e) {
     if (ch) upload(e);
 }
 
-// ---------------------------------------------------------------- aliases (TOTK_TEX_ALIAS)
+// ---------------------------------------------------------------- aliases (UO_TEX_ALIAS)
 // Bytes per block and block size of the image's VkFormat (ASTC decodes to RGBA8, RGB expands to RGBA); 0 when the
 // VkFormat substitutes another one of unknown size.
 static int img_block(const Tex *e, int *bw, int *bh) {
@@ -913,7 +913,7 @@ static Tex *entry_of(const tex_t *t) {
     Tex *e = nvn_hm_get(&by_key, &k);
     if (!e) {
         if (tex_alias < 0) {
-            tex_alias = cfg_bool("TOTK_TEX_ALIAS");
+            tex_alias = cfg_bool("UO_TEX_ALIAS");
             rt_log("vk: texture aliases: %s", tex_alias ? "a new image takes the live image's content" : "a new image starts empty");
         }
         if (!(e = create_tex(t, &k, tex_alias))) return NULL;
@@ -980,8 +980,8 @@ const VkTexImage *vk_texture_get(const tex_t *t) {
 }
 
 // Small render targets the CPU reads without NVN's invalidate (vk_texture_write_back_small); small_pending: one may be
-// dirty. wb_limit is the largest target (bytes) that goes back when the CPU waits for a fence: TOTK_WB_FENCE_LIMIT,
-// read once. wb_trace: TOTK_TRACE=gfx, read together with it.
+// dirty. wb_limit is the largest target (bytes) that goes back when the CPU waits for a fence: UO_WB_FENCE_LIMIT,
+// read once. wb_trace: UO_TRACE=gfx, read together with it.
 enum { WB_SMALL_DEFAULT = 64 << 10 };
 static int small_pending;
 static uint64_t wb_limit = WB_SMALL_DEFAULT;
@@ -990,7 +990,7 @@ static int wb_cfg_read;
 
 static void wb_cfg_init(void) {
     if (wb_cfg_read) return;
-    int v = cfg_int("TOTK_WB_FENCE_LIMIT");
+    int v = cfg_int("UO_WB_FENCE_LIMIT");
     wb_limit = v < 0 ? 0 : (uint64_t)v;
     wb_trace = (rt_trace & RT_TRACE_GFX) != 0;
     wb_cfg_read = 1;
@@ -1013,7 +1013,7 @@ void vk_texture_gpu_written(const tex_t *t) {
         if (e->pub.mirrored) {
             e->gpu_dirty = 1;
             storage_rewritten(e, 0, &e->gpu_gen);   // CPU writes up to here are older than this render
-            if (wb_exact < 0) wb_exact = cfg_bool("TOTK_WB_EXACT");
+            if (wb_exact < 0) wb_exact = cfg_bool("UO_WB_EXACT");
             if (wb_exact && !e->snap && e->t.L.size <= SNAP_MAX && fills_no_page(e) && !(e->snap = malloc(SNAP_MAX)))
                 rt_fatal("vk: out of memory for a texture's storage copy");
             if (e->snap) memcpy(e->snap, (const void *)(uintptr_t)e->pub.addr, e->t.L.size);
@@ -1563,7 +1563,7 @@ void vk_texture_write_back(uint64_t addr, uint64_t size) {
 // storage, unless the CPU rewrote it since. Larger targets still go back on an invalidate, memcpy or ReadTexels.
 int vk_texture_small_dirty(void) { return __atomic_load_n(&small_pending, __ATOMIC_ACQUIRE); }
 
-// TOTK_TRACE=gfx: a dirty target the fence write-back leaves alone because it is over the limit (what a CPU read
+// UO_TRACE=gfx: a dirty target the fence write-back leaves alone because it is over the limit (what a CPU read
 // after the wait would miss), or sends back although it is over the default limit (what a raised limit changed). One
 // line per target address and outcome; the table is small and a full one stops logging.
 static void wb_note(const Tex *e, int skipped) {
@@ -1657,14 +1657,14 @@ static void sampler_features(VkCtx *c) {
     sf.init = 1;
 }
 
-// TOTK_TEX_LOD_BIAS (a float, default 0): added to every sampler's LOD bias. A negative value samples a sharper mip
+// UO_TEX_LOD_BIAS (a float, default 0): added to every sampler's LOD bias. A negative value samples a sharper mip
 // level, which counteracts the softness of textures authored for a lower resolution; the cost is a little aliasing.
 static float tex_lod_bias(void) {
     static int init;
     static float bias;
     if (!init) {
         init = 1;
-        const char *s = cfg_get("TOTK_TEX_LOD_BIAS");
+        const char *s = cfg_get("UO_TEX_LOD_BIAS");
         if (s && *s) {
             char *end;
             double v = strtod(s, &end);
@@ -1674,13 +1674,13 @@ static float tex_lod_bias(void) {
     return bias;
 }
 
-// TOTK_ANISO (default 0 = the game's own sampler values): a floor on anisotropic filtering, 1..16.
+// UO_ANISO (default 0 = the game's own sampler values): a floor on anisotropic filtering, 1..16.
 static float tex_aniso_min(void) {
     static int init;
     static float v;
     if (!init) {
         init = 1;
-        const char *s = cfg_get("TOTK_ANISO");
+        const char *s = cfg_get("UO_ANISO");
         if (s && *s) {
             char *end;
             double d = strtod(s, &end);
@@ -1720,11 +1720,11 @@ static VkSampler make_sampler(VkCtx *c, const samp_par *d) {
     if (mf <= NVN_MIN_FILTER_LINEAR) si.maxLod = si.minLod + 0.25f;   // not mipmapped: stay on the base level
     if (si.maxLod < si.minLod) si.maxLod = si.minLod;
     float lim = c->props.limits.maxSamplerLodBias;
-    // TOTK_TEX_LOD_BIAS: a negative bias makes textures sample sharper detail. At 4K the same texture covers more pixels
+    // UO_TEX_LOD_BIAS: a negative bias makes textures sample sharper detail. At 4K the same texture covers more pixels
     // than it was authored for, so it reads as soft; -0.5..-1.0 restores the crispness at a small aliasing cost.
     si.mipLodBias = fmaxf(-lim, fminf(lim, d->lod_bias + tex_lod_bias()));
     if (d->aniso > 1 || tex_aniso_min() > 1) {
-        // TOTK_ANISO (default 0 = the game's own value): a floor on anisotropy. Engage was authored for a 720p-class
+        // UO_ANISO (default 0 = the game's own value): a floor on anisotropy. Engage was authored for a 720p-class
         // handheld, so its samplers ask for little or none; at 4K a ground plane seen at a shallow angle then smears.
         float want = fmaxf(d->aniso, tex_aniso_min());
         si.anisotropyEnable = VK_TRUE;

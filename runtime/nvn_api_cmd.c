@@ -583,8 +583,8 @@ NVN_API(nvnCommandBufferSetRenderEnableConditional) {
 }
 // void nvnCommandBufferBindProgram(NVNcommandBuffer *cmd, const NVNprogram *program, int stages)
 NVN_API(nvnCommandBufferBindProgram) {
-    static int shown;   // TOTK_DRAW_DIAG: the program pointer the game binds and the stage mask it asks for
-    if (cfg_bool("TOTK_DRAW_DIAG") && shown < 4) {
+    static int shown;   // UO_DRAW_DIAG: the program pointer the game binds and the stage mask it asks for
+    if (cfg_bool("UO_DRAW_DIAG") && shown < 4) {
         shown++;
         rt_log("nvn: BindProgram(cmd %p, program %p, stages %d)", arg_p(c, 0), arg_p(c, 1), (int)(int32_t)arg_x(c, 2));
     }

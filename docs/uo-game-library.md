@@ -7,7 +7,7 @@ Alpha.5 downloads still use the earlier single-executable layout.
 For a packaged installation, use `Engage-Launcher.exe` in the game folder for
 Play, settings, mods and Setup / Update. Setup installs its tools in `.launcher/`
 and switches to that installed copy; the original extracted setup folder can
-then be deleted. See [installation and updates](installing-engage.md).
+then be deleted. See [installation and updates](installing-uo.md).
 
 You can still double-click `engage.exe` or a Windows shortcut to it; the normal
 EXE does not open a terminal window. A CMD launcher is optional.
@@ -41,7 +41,7 @@ necessary rebuild does not require extracting the game again.
 
 ## Build
 
-The normal commands in [building-engage.md](building-engage.md) build both files.
+The normal commands in [building-uo.md](building-uo.md) build both files.
 To build only the public runtime without game inputs:
 
 ```powershell

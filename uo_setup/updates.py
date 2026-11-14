@@ -9,12 +9,11 @@ import shutil
 import stat
 import tempfile
 import zipfile
-from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-RELEASES_API = 'https://gitlab.com/api/v4/projects/88458502/releases?per_page=20'
-RELEASES_PAGE = 'https://gitlab.com/uo-recomp/uo-recomp/-/releases/'
-VERSION = re.compile(r'^(?:engage-)?v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*))?$')
+RELEASES_API = 'https://api.github.com/repos/imalti0r/uo-pc-recomp/releases?per_page=20'
+RELEASES_PAGE = 'https://github.com/imalti0r/uo-pc-recomp/releases/tag/'
+VERSION = re.compile(r'^(?:uo-)?v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*))?$')
 
 
 def version_key(value):
@@ -39,7 +38,7 @@ def select_update(current, releases):
         raise ValueError('Invalid release version or response.')
     newest = None
     for release in releases:
-        if not isinstance(release, dict) or release.get('upcoming_release'):
+        if not isinstance(release, dict) or release.get('draft'):
             continue
         tag = release.get('tag_name', '')
         if not isinstance(tag, str) or len(tag) > 100:
@@ -47,15 +46,19 @@ def select_update(current, releases):
         candidate = version_key(tag)
         if candidate is None or candidate <= installed or (installed[3] and not candidate[3]):
             continue
-        version = tag.removeprefix('engage-').removeprefix('v')
+        version = tag.removeprefix('uo-').removeprefix('v')
         expected = {f'UO-Setup-{version}-windows.zip', f'UO-Launcher-{version}-windows.zip'}
-        assets = release.get('assets', {})
-        links = assets.get('links', []) if isinstance(assets, dict) else []
-        package = next((link['name'] for link in links if isinstance(link, dict) and link.get('name') in expected), None) if isinstance(links, list) else None
+        assets = release.get('assets', [])
+        package = next((asset['name'] for asset in assets
+                        if isinstance(asset, dict) and asset.get('name') in expected), None) if isinstance(assets, list) else None
         if not package:
             continue  # Source-only releases do not update a player's launcher.
+        url = next((a.get('browser_download_url', '') for a in assets
+                    if isinstance(a, dict) and a.get('name') == package), '')
+        if not url:
+            continue
         if newest is None or candidate > newest[0]:
-            newest = candidate, Update(version, RELEASES_PAGE + quote(tag, safe=''), package)
+            newest = candidate, Update(version, url, package)
     return newest[1] if newest else None
 
 
@@ -80,7 +83,7 @@ def package_name(version):
 
 
 def validate_update(info):
-    tag = info.page_url.removeprefix(RELEASES_PAGE)
+    tag = info.page_url.rsplit('/', 1)[-1]
     if not info.page_url.startswith(RELEASES_PAGE) or version_key(tag) != version_key(info.version):
         raise ValueError('The update is not an official project release.')
     if info.file_name not in {package_name(info.version) + '.zip', f'UO-Launcher-{info.version}-windows.zip'}:
@@ -110,13 +113,13 @@ def prepare_update(info, current_root, progress, cancel):
             wanted = parts[0].lower()
     if not wanted:
         raise ValueError('This release has no checksum for its setup ZIP. The current version was kept.')
-    with tempfile.TemporaryDirectory(prefix='.engage-update-', dir=parent) as temp:
+    with tempfile.TemporaryDirectory(prefix='.uo-update-', dir=parent) as temp:
         stage = Path(temp).resolve()
         if stage.parent != parent:
             raise ValueError('Unexpected update staging directory.')
         archive_path = stage / 'download.zip'
         digest, done = hashlib.sha256(), 0
-        with request(info.page_url + '/downloads/' + quote(info.file_name, safe='')) as response, archive_path.open('xb') as out:
+        with request(info.page_url) as response, archive_path.open('xb') as out:
             total = int(response.headers.get('Content-Length') or 0)
             if total > 2 * 1024 ** 3:
                 raise ValueError('This update package is too large.')

@@ -1,9 +1,9 @@
 // NVIDIA DLSS (DLAA and Super Resolution) through NVIDIA Streamline, in place of FSR 1 on the
-// present path (gfx_present.c present_image): TOTK_UPSCALER=dlss, TOTK_DLSS_MODE=dlaa|quality|
+// present path (gfx_present.c present_image): UO_UPSCALER=dlss, UO_DLSS_MODE=dlaa|quality|
 // performance|ultra. RTX only. Streamline is loaded at run time from sl.interposer.dll; its
 // plugins (sl.common.dll, sl.dlss.dll) and nvngx_dlss.dll sit next to it. None of NVIDIA's files
 // is part of this project: the player puts the four DLLs of NVIDIA's Streamline SDK (bin/x64) in
-// upscalers\streamline next to the executable, or names their folder in TOTK_DLSS_DIR. Nothing is
+// upscalers\streamline next to the executable, or names their folder in UO_DLSS_DIR. Nothing is
 // linked. Streamline has to see vkCreateInstance / vkCreateDevice and the rest of the Vulkan
 // calls, so with DLSS selected at start-up the loader functions come from its vkGetInstanceProcAddr
 // (vk_dlss_preinit, called by vk_device.c before the instance is created, then every vulkan-1
@@ -97,14 +97,14 @@ std::string narrow(const std::wstring &w) {
     return buf;
 }
 
-// The folder holding sl.interposer.dll: TOTK_DLSS_DIR (a folder, or the path of sl.interposer.dll
+// The folder holding sl.interposer.dll: UO_DLSS_DIR (a folder, or the path of sl.interposer.dll
 // or any file in it); unset: upscalers\streamline next to the executable, else in the run folder
 // (the working directory), else the executable's own folder.
 std::wstring sl_dir() {
     std::wstring p;
     {
         char a[MAX_PATH];
-        if (plat_getenv("TOTK_DLSS_DIR", a, sizeof a) && a[0]) {
+        if (plat_getenv("UO_DLSS_DIR", a, sizeof a) && a[0]) {
             int n = MultiByteToWideChar(CP_UTF8, 0, a, -1, nullptr, 0);
             std::wstring w((size_t)n, L'\0');
             MultiByteToWideChar(CP_UTF8, 0, a, -1, w.data(), n);
@@ -207,7 +207,7 @@ static int sl_start(VkInstance inst, VkPhysicalDevice phys, VkDevice dev, unsign
     if (!exists(dll)) {
         rt_log("vk: DLSS selected but %s is missing: put the Streamline DLLs (sl.interposer.dll, sl.common.dll, "
                "sl.dlss.dll, nvngx_dlss.dll) in upscalers\\streamline next to the game, or name their folder in "
-               "TOTK_DLSS_DIR; FSR keeps the present",
+               "UO_DLSS_DIR; FSR keeps the present",
                narrow(dll).c_str());
         s.blocked = "Streamline files missing";
         return 0;
@@ -318,7 +318,7 @@ static int sl_start(VkInstance inst, VkPhysicalDevice phys, VkDevice dev, unsign
 // Called by vk_device.c right after the device exists: DLSS selected at start-up starts Streamline
 // here; selected later it starts from vk_dlss_record's first call instead.
 void vk_dlss_set_device(VkInstance inst, VkPhysicalDevice phys, VkDevice dev, unsigned gfx_family, unsigned gfx_index) {
-    if (strcmp(cfg_value("TOTK_UPSCALER"), "dlss")) return;
+    if (strcmp(cfg_value("UO_UPSCALER"), "dlss")) return;
     sl_start(inst, phys, dev, gfx_family, gfx_index);
 }
 
@@ -479,7 +479,7 @@ static sl::DLSSMode mode_of(const char *m) {
     return sl::DLSSMode::eDLAA;
 }
 
-// TOTK_DLSS_MODE=auto: the mode whose ratio comes closest to output / input, so the upscaler's output lands on the
+// UO_DLSS_MODE=auto: the mode whose ratio comes closest to output / input, so the upscaler's output lands on the
 // requested resolution instead of being scaled again by the present blit. Unicorn Overlord always draws 1920x1080, so
 // on a 4K output this picks Performance (x2 -> 3840x2160) and on 1440p Quality (x1.5 -> 2880x1620).
 static sl::DLSSMode mode_auto(double want_ratio) {
@@ -508,7 +508,7 @@ int vk_dlss_record(VkCommandBuffer cb, unsigned slot, VkImage src, VkFormat fmt,
     Sl &s = sl_state();
     int cw = crop[2], ch = crop[3];
     uint32_t dw = (uint32_t)out[2], dh = (uint32_t)out[3];
-    if (!(rt_game_id == 1 || rt_game_id == 3) || strcmp(cfg_value("TOTK_UPSCALER"), "dlss") || !fmt) return 0;
+    if (!(rt_game_id == 1 || rt_game_id == 3) || strcmp(cfg_value("UO_UPSCALER"), "dlss") || !fmt) return 0;
     VkCtx *c = vk_ctx();
     if (!s.started) {   // DLSS selected mid-session: start Streamline now (the device carries the NVX
         // extensions, vk_device.c enables them whenever present)
@@ -549,10 +549,10 @@ int vk_dlss_record(VkCommandBuffer cb, unsigned slot, VkImage src, VkFormat fmt,
         }
         D.pipelines = 1;
     }
-    sl::DLSSMode m = mode_of(cfg_value("TOTK_DLSS_MODE"));
+    sl::DLSSMode m = mode_of(cfg_value("UO_DLSS_MODE"));
     // "auto": the mode whose ratio lands the output on the requested resolution (only meaningful where the port knows
     // the output size and the game's own draw size, which is Unicorn Overlord's case).
-    if (!strcmp(cfg_value("TOTK_DLSS_MODE"), "auto")) {
+    if (!strcmp(cfg_value("UO_DLSS_MODE"), "auto")) {
         unsigned out2[2] = {0, 0};
         if (rt_game_id == 3) res_uo_sizes(NULL, out2);
         if (out2[0] && cw) m = mode_auto((double)out2[0] / (double)cw);
@@ -605,10 +605,10 @@ int vk_dlss_record(VkCommandBuffer cb, unsigned slot, VkImage src, VkFormat fmt,
     if (capw && ow > capw) ow = capw & ~1u;
     if (caph && oh > caph) oh = caph & ~1u;
     // what the game actually hands us, the cap the settings ask for and the swapchain's own size: the three numbers
-    // that say whether a settings change reached the game. TOTK_TRACE=1 logs when they change, 2 on every present (the
+    // that say whether a settings change reached the game. UO_TRACE=1 logs when they change, 2 on every present (the
     // matrix runner needs one line per combo, and a switch that changes nothing would leave no line at level 1).
     static int trace = -1;
-    if (trace < 0) trace = cfg_int("TOTK_TRACE") > 0 ? cfg_int("TOTK_TRACE") : getenv("TOTK_DLSS_TRACE") != NULL;
+    if (trace < 0) trace = cfg_int("UO_TRACE") > 0 ? cfg_int("UO_TRACE") : getenv("UO_DLSS_TRACE") != NULL;
     if (trace > 0) {
         static uint32_t last[6];
         static unsigned long long presents;
@@ -736,10 +736,10 @@ int vk_dlss_record(VkCommandBuffer cb, unsigned slot, VkImage src, VkFormat fmt,
     barrier(cb, D.out, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
             VK_ACCESS_2_MEMORY_WRITE_BIT, CS, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 
-    // 3. encode into RGBA8, then the 1:1 blit into the swapchain. The sharpening is the same TOTK_SHARPNESS the FSR path
+    // 3. encode into RGBA8, then the 1:1 blit into the swapchain. The sharpening is the same UO_SHARPNESS the FSR path
     // uses: DLSS gets no sub-pixel jitter from this game (no access to its projection), so its output is a little soft
     // and a contrast-adaptive unsharp mask gives the crispness back.
-    int sharp = cfg_int("TOTK_SHARPNESS");
+    int sharp = cfg_int("UO_SHARPNESS");
     if (sharp < 0) sharp = 0;
     if (sharp > 100) sharp = 100;
     static int sharp_logged = -1;

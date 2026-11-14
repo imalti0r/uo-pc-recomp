@@ -21,7 +21,7 @@
 // decoded frames are handed over when their presentation time is due, counted from the first frame (movie_tick, at every
 // present on the presenting guest thread), at most one per present. When the game falls behind, a frame more than 1.5
 // periods late is dropped if the next one is due too, so the picture keeps time with the movie's sound.
-// TOTK_MOVIE_PACE=0 hands every decoded frame over at the next present; TOTK_MOVIE_HOST=0 leaves every decoder to the
+// UO_MOVIE_PACE=0 hands every decoded frame over at the next present; UO_MOVIE_HOST=0 leaves every decoder to the
 // library (which aborts at the first movie).
 #include <emmintrin.h>
 #include <stdint.h>
@@ -58,11 +58,11 @@ typedef struct { int index; unsigned flags; int64_t time; } Ready;
 // rate the title and story movies play at.
 #define MOVIE_FPS 30.0
 
-// TOTK_MOVIE_SYNTH=1: pace a stream whose guest timestamps never advance by its frame order (see Movie.synth).
+// UO_MOVIE_SYNTH=1: pace a stream whose guest timestamps never advance by its frame order (see Movie.synth).
 // Off by default: the guest of this title asks for frames as fast as it plays, so holding them back stalls it.
 static int movie_synth_on(void) {
     static int on = -1;
-    if (on < 0) { const char *e = cfg_value("TOTK_MOVIE_SYNTH"); on = e && *e && strcmp(e, "0"); }
+    if (on < 0) { const char *e = cfg_value("UO_MOVIE_SYNTH"); on = e && *e && strcmp(e, "0"); }
     return on;
 }
 
@@ -113,7 +113,7 @@ void movie_set_clock(uint64_t (*clock)(void)) { g_clock = clock ? clock : kern_n
 void movie_set_pace(int on) { g_pace = on; }
 static int pace_on(void) {
     if (g_pace < 0) {
-        const char *e = cfg_get("TOTK_MOVIE_PACE");
+        const char *e = cfg_get("UO_MOVIE_PACE");
         g_pace = !(e && !strcmp(e, "0"));
     }
     return g_pace;
@@ -121,7 +121,7 @@ static int pace_on(void) {
 static int host_off(void) {
     static int v = -1;
     if (v < 0) {
-        const char *e = cfg_get("TOTK_MOVIE_HOST");
+        const char *e = cfg_get("UO_MOVIE_HOST");
         v = e && !strcmp(e, "0");
     }
     return v;
@@ -240,11 +240,11 @@ static int can_take(const Movie *m, const Pending *p) {
     int want = (p->size > 0) + ((p->flags & MOVIE_FLAG_EOS) && !m->eos_in);
     return free_outs(m) >= want;
 }
-// TOTK_MOVIE_DIAG=1: the guest's presentation timestamps and the rate the pacer hands frames over, so a movie that plays
+// UO_MOVIE_DIAG=1: the guest's presentation timestamps and the rate the pacer hands frames over, so a movie that plays
 // at the wrong speed shows the unit it is being read in (the pacer treats time as microseconds).
 static int movie_diag(void) {
     static int on = -1;
-    if (on < 0) { const char *e = cfg_value("TOTK_MOVIE_DIAG"); on = e && *e && strcmp(e, "0"); }
+    if (on < 0) { const char *e = cfg_value("UO_MOVIE_DIAG"); on = e && *e && strcmp(e, "0"); }
     return on;
 }
 
@@ -501,7 +501,7 @@ static void ov_ctor(Cpu *c) {
     guest_init();
     if (type != MOVIE_TYPE_VP9 || mode != MOVIE_MODE_BUFFER || host_off()) {
         rt_log("movie: decoder type %d mode %d format %d left to the library%s", type, mode, format,
-               host_off() ? " (TOTK_MOVIE_HOST=0)" : " (only VP9 in buffer mode runs on the host)");
+               host_off() ? " (UO_MOVIE_HOST=0)" : " (only VP9 in buffer mode runs on the host)");
         pass(c, MOVIE_CTOR);
         return;
     }

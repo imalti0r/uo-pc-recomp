@@ -1,6 +1,6 @@
-// totk.exe entry: reserves the guest address space, parses the command line and runs one mode.
+// uo.exe entry: reserves the guest address space, parses the command line and runs one mode.
 //
-//   totk.exe [--exefs DIR] [--romfs DIR] [--profile DIR] <mode>
+//   uo.exe [--exefs DIR] [--romfs DIR] [--profile DIR] <mode>
 //     --selftest        layout, dispatch table and host-function registry; needs no game files
 //     --probe-loader    load and relocate the modules, check them against the measured 1.2.1 values
 //     --probe-kernel, --probe-ipc, --probe-services, --probe-fs    host probes
@@ -12,7 +12,7 @@
 //     --boot            run the game to the first NVN call
 //     --seconds S       run the game (implies --boot's start-up) until the world clock (game time since the loaded
 //                       save's first frame) passed S seconds, then exit 0 at that present
-//     --shot PNG        with --seconds: save that frame; env TOTK_GPU=null|vulkan selects the back end
+//     --shot PNG        with --seconds: save that frame; env UO_GPU=null|vulkan selects the back end
 //     (no mode)         run the game
 //
 // Also here: the runtime services the generated code calls besides rt_dispatch and rt_svc (rt_brk, rt_udf,
@@ -38,9 +38,9 @@
 unsigned rt_trace;
 
 // Log file. A game run whose stderr is not a file already (started from Explorer, a shortcut or a console) also
-// writes its log to logs\totk.log next to totk.exe, so a player has one to attach to a report; run_game.py and
-// `2> file` keep their own file. Each start moves the earlier logs to totk.1.log .. totk.4.log. A file stops at 64 MiB
-// (TOTK_TRACE can write that much). Lines from before log_open wait in a static buffer: mem_init runs first so that
+// writes its log to logs\uo.log next to uo.exe, so a player has one to attach to a report; run_game.py and
+// `2> file` keep their own file. Each start moves the earlier logs to uo.1.log .. uo.4.log. A file stops at 64 MiB
+// (UO_TRACE can write that much). Lines from before log_open wait in a static buffer: mem_init runs first so that
 // nothing else lands in the guest address space, and an earlier open would put the CRT's heap there.
 #define LOG_KEEP 5
 #define LOG_CAP (64ull << 20)
@@ -112,7 +112,7 @@ static void log_open(int game) {
         strcpy(cut, "/logs");
         plat_file_mkdir_p(dir);
         const char *stem = RT_LOG_STEM;
-        for (int i = LOG_KEEP - 1; i > 0; i--) {   // totk.3.log -> totk.4.log, ..., totk.log -> totk.1.log
+        for (int i = LOG_KEEP - 1; i > 0; i--) {   // totk.3.log -> totk.4.log, ..., uo.log -> totk.1.log
             if (i > 1) snprintf(from, sizeof from, "%s/%s.%d.log", dir, stem, i - 1);
             else snprintf(from, sizeof from, "%s/%s.log", dir, stem);
             snprintf(to, sizeof to, "%s/%s.%d.log", dir, stem, i);
@@ -134,7 +134,7 @@ static void log_open(int game) {
 }
 
 static void parse_trace(void) {
-    const char *e = cfg_get("TOTK_TRACE");   // no default: nothing is traced when unset
+    const char *e = cfg_get("UO_TRACE");   // no default: nothing is traced when unset
     if (!e) return;
     static const struct { const char *name; unsigned bit; } names[] = {
         {"svc", RT_TRACE_SVC}, {"host", RT_TRACE_HOSTCALL}, {"ipc", RT_TRACE_IPC}, {"fs", RT_TRACE_FS},
@@ -145,19 +145,19 @@ static void parse_trace(void) {
         int known = 0;
         for (unsigned i = 0; i < sizeof names / sizeof *names; i++)
             if (strlen(names[i].name) == n && !strncmp(p, names[i].name, n)) rt_trace |= names[i].bit, known = 1;
-        if (!known && n) rt_log("TOTK_TRACE: unknown item '%.*s' (svc, host, ipc, fs, gfx, perf, sched, audio, present, all)", (int)n, p);
+        if (!known && n) rt_log("UO_TRACE: unknown item '%.*s' (svc, host, ipc, fs, gfx, perf, sched, audio, present, all)", (int)n, p);
         p += n + (p[n] == ',');
     }
 }
 
 void rt_sha256(const void *p, size_t n, uint8_t out[32]) { sha256(p, n, out); }
 
-// TOTK_ARENA_TRACE: report the game's bump-arena objects (main's 0x28f47e0 and 0x28f2de0 slots) whenever one of their
+// UO_ARENA_TRACE: report the game's bump-arena objects (main's 0x28f47e0 and 0x28f2de0 slots) whenever one of their
 // fields changes, so a base that goes to zero can be attributed to the code that ran just before.
 void rt_arena_trace(void) {
     static uint64_t last[2][6];
     static int n;
-    const char *e = cfg_get("TOTK_ARENA_TRACE");
+    const char *e = cfg_get("UO_ARENA_TRACE");
     if (!e || !*e || !rt_layout_count) return;
     uint64_t base = rt_layout[0].base;
     for (int k = 0; k < 2; k++) {
@@ -184,7 +184,7 @@ const RtConfig *rt_config(void) { return &cfg; }
 
 // ---- runtime services the generated code calls (cpu.h)
 volatile int g_fnprof = 0;
-// TOTK_BP=<addr>[,<addr>...]: guest function starts to report on entry (hex, with or without 0x). Every lifted
+// UO_BP=<addr>[,<addr>...]: guest function starts to report on entry (hex, with or without 0x). Every lifted
 // function entry then tests this list, which is only worth it while tracing one path.
 static uint64_t bp_addr[16];
 static int bp_n;
@@ -201,10 +201,10 @@ void fnprof_hit(uint64_t addr, uint64_t lr, uint64_t x0) {
             static int hits;
             Cpu *c = kern_cpu();
             uint64_t x1 = c ? c->x[1] : 0, x8 = c ? c->x[8] : 0, x19 = c ? c->x[19] : 0;
-            // TOTK_BP_FROM: only calls from this return address (a call site inside one lifted function).
+            // UO_BP_FROM: only calls from this return address (a call site inside one lifted function).
             if (bp_from_set && lr != bp_from) return;
-            // TOTK_BP_MIN: only report calls whose x0 (the size an allocator takes first) is at least this, to cut a
-            // hot allocation path down to the interesting requests. TOTK_BP_X0: only calls whose x0 is exactly this.
+            // UO_BP_MIN: only report calls whose x0 (the size an allocator takes first) is at least this, to cut a
+            // hot allocation path down to the interesting requests. UO_BP_X0: only calls whose x0 is exactly this.
             if (bp_x0_set && x0 != bp_x0) return;
             if (bp_x1_set && x1 != bp_x1) return;
             if (!bp_x0_set && !bp_x1_set && bp_min && x0 < bp_min) return;
@@ -214,7 +214,7 @@ void fnprof_hit(uint64_t addr, uint64_t lr, uint64_t x0) {
             rt_log("bp: %s x0 %#llx x1 %#llx x8 %#llx x19 %#llx from %s", ldr_describe(addr, at, sizeof at),
                    (unsigned long long)x0, (unsigned long long)x1, (unsigned long long)x8, (unsigned long long)x19,
                    ldr_describe(lr, from, sizeof from));
-            // TOTK_BP_ALL: the whole register file, for a site whose arguments are not in the first four.
+            // UO_BP_ALL: the whole register file, for a site whose arguments are not in the first four.
             if (bp_all && c) {
                 for (int r = 0; r < 31; r++)
                     rt_logf("    x%-2d %016llx%s", r, (unsigned long long)c->x[r], r % 4 == 3 ? "\n" : "");
@@ -228,7 +228,7 @@ void fnprof_hit(uint64_t addr, uint64_t lr, uint64_t x0) {
                     rt_logf(" %016llx", (unsigned long long)*(const uint64_t *)(uintptr_t)(x0 + 8 * k));
                 rt_log_raw("\n", 1);
             }
-            // TOTK_BP_MEMREG=<reg>:<offset>[,...]: the 8 words at a register plus an offset, for a structure that
+            // UO_BP_MEMREG=<reg>:<offset>[,...]: the 8 words at a register plus an offset, for a structure that
             // moves between runs (reg 19 and offset 3600 is x19+0x3600).
             for (int i = 0; bp_memreg_n && i < bp_memreg_n; i++) {
                 uint64_t a = (c ? c->x[bp_memreg_reg[i]] : 0) + bp_memreg_off[i];
@@ -253,7 +253,7 @@ void fnprof_hit(uint64_t addr, uint64_t lr, uint64_t x0) {
         }
 }
 void rt_bp_init(void) {
-    const char *e = cfg_get("TOTK_BP");
+    const char *e = cfg_get("UO_BP");
     if (e && *e)
         for (const char *p = e; *p && bp_n < 16;) {
             char *end = NULL;
@@ -262,21 +262,21 @@ void rt_bp_init(void) {
             bp_addr[bp_n++] = a;
             p = *end == ',' ? end + 1 : end;
         }
-    const char *m = cfg_get("TOTK_BP_MIN");
+    const char *m = cfg_get("UO_BP_MIN");
     if (m && *m) bp_min = strtoull(m, NULL, 0);
-    const char *z = cfg_get("TOTK_BP_X0");
+    const char *z = cfg_get("UO_BP_X0");
     if (z && *z) bp_x0 = strtoull(z, NULL, 0), bp_x0_set = 1;
-    const char *o = cfg_get("TOTK_BP_X1");
+    const char *o = cfg_get("UO_BP_X1");
     if (o && *o) bp_x1 = strtoull(o, NULL, 0), bp_x1_set = 1;
-    const char *f = cfg_get("TOTK_BP_FROM");
+    const char *f = cfg_get("UO_BP_FROM");
     if (f && *f) bp_from = strtoull(f, NULL, 16), bp_from_set = 1;
-    const char *mx = cfg_get("TOTK_BP_MAX");
+    const char *mx = cfg_get("UO_BP_MAX");
     if (mx && *mx) bp_max = strtoull(mx, NULL, 0), bp_max_set = 1;
-    const char *sp = cfg_get("TOTK_BP_SP");
+    const char *sp = cfg_get("UO_BP_SP");
     if (sp && *sp && *sp != '0') bp_sp = 1;
-    const char *all = cfg_get("TOTK_BP_ALL");
+    const char *all = cfg_get("UO_BP_ALL");
     if (all && *all && *all != '0') bp_all = 1;
-    const char *mm = cfg_get("TOTK_BP_MEM");
+    const char *mm = cfg_get("UO_BP_MEM");
     if (mm && *mm)
         for (const char *q = mm; *q && bp_mem_n < 8;) {
             char *end = NULL;
@@ -285,7 +285,7 @@ void rt_bp_init(void) {
             bp_mem[bp_mem_n++] = a;
             q = *end == ',' ? end + 1 : end;
         }
-    const char *mr = cfg_get("TOTK_BP_MEMREG");
+    const char *mr = cfg_get("UO_BP_MEMREG");
     if (mr && *mr)
         for (const char *q = mr; *q && bp_memreg_n < 4;) {
             char *end = NULL;
@@ -310,11 +310,11 @@ void rt_brk(Cpu *c, uint32_t imm, uint64_t pc) {
 
 void rt_udf(Cpu *c, uint64_t pc) {
     char at[128], lr[128];
-    // TOTK_NOABORT: the SDK's noreturn abort stubs end in a udf, and the compiler also emits one right after
+    // UO_NOABORT: the SDK's noreturn abort stubs end in a udf, and the compiler also emits one right after
     // every call it knows never returns. Swallowing means resuming past the stub: walk the frame chain
     // (one level deeper on each consecutive trap, so a nested pair of stubs also gets out) and resume the
     // dispatcher at the first return address that is not itself a trap.
-    const char *na = cfg_get("TOTK_NOABORT");
+    const char *na = cfg_get("UO_NOABORT");
     static int nsw;
     if (na && *na && *na != '0' && nsw < 64) {
         uint64_t fp = c->x[29], ret = c->x[30];
@@ -323,7 +323,7 @@ void rt_udf(Cpu *c, uint64_t pc) {
             ret = ra, fp = saved;
         }
         nsw++;
-        rt_log("diag: undefined instruction swallowed (TOTK_NOABORT #%d) at %s, resuming %s", nsw,
+        rt_log("diag: undefined instruction swallowed (UO_NOABORT #%d) at %s, resuming %s", nsw,
                ldr_describe(pc, at, sizeof at), ldr_describe(ret, lr, sizeof lr));
         rt_guest_resume(c, ret);
     }
@@ -387,7 +387,7 @@ static void crash_handler(const PlatCrash *x) {
     uintptr_t rip = x->rip;
     rt_logf("FATAL: %s (%#x) at host %p (", x->what, x->code, (void *)rip);
     if (x->module && !*x->module) rt_logf("outside every module)");
-    else rt_logf("%s+%#llx)", x->module ? x->module : "totk", (unsigned long long)x->offset);
+    else rt_logf("%s+%#llx)", x->module ? x->module : "uo", (unsigned long long)x->offset);
     if (x->access >= 0)
         rt_logf(", %s address %#llx", x->access == 1 ? "writing" : x->access == 8 ? "executing" : "reading",
                 (unsigned long long)x->addr);
@@ -399,7 +399,7 @@ static void crash_handler(const PlatCrash *x) {
     uintptr_t exe = plat_exe_base();
     for (int i = 0; i < x->nframes; i++) {
         uint64_t g = lifted_function(x->frames[i]);
-        rt_logf("  host frame %2d: totk+%#llx", i, (unsigned long long)(x->frames[i] - exe));
+        rt_logf("  host frame %2d: uo+%#llx", i, (unsigned long long)(x->frames[i] - exe));
         if (g) rt_logf(" in lifted function f_%llx", (unsigned long long)g);
         rt_log_raw("\n", 1);
     }
@@ -413,8 +413,8 @@ static void crash_handler(const PlatCrash *x) {
             rt_logf("  x%-2d %016llx%s", i, (unsigned long long)c->x[i], i % 4 == 3 ? "\n" : "");
         rt_logf("  sp  %016llx\n  pc  %016llx  lr %s\n", (unsigned long long)c->sp, (unsigned long long)c->pc,
                 ldr_describe(c->x[30], d, sizeof d));
-        // TOTK_CRASH_DUMP: hex words around the addresses in the registers that name data (diagnosing a corrupt table).
-        const char *dump = cfg_get("TOTK_CRASH_DUMP");
+        // UO_CRASH_DUMP: hex words around the addresses in the registers that name data (diagnosing a corrupt table).
+        const char *dump = cfg_get("UO_CRASH_DUMP");
         if (dump && *dump && strcmp(dump, "0")) {
             for (int r = 0; r < 31; r++) {
                 uint64_t a = c->x[r] & ~15ull;
@@ -424,7 +424,7 @@ static void crash_handler(const PlatCrash *x) {
                 rt_log_raw("\n", 1);
             }
         }
-        // TOTK_CRASH_DUMP=3: main's two-allocator routing globals (0x28f8000 + 0xa60/0xa68/0xc48/0xc50): the game
+        // UO_CRASH_DUMP=3: main's two-allocator routing globals (0x28f8000 + 0xa60/0xa68/0xc48/0xc50): the game
         // picks the allocator for a pointer by comparing it with the value at +0xc50, and a heap that sits on the
         // other side of that boundary sends a malloc block to the slab allocator.
         if (dump && atoi(dump) >= 3) {
@@ -480,7 +480,7 @@ static void crash_handler(const PlatCrash *x) {
                 }
             }
         }
-        // TOTK_CRASH_DUMP=12: the heap head main+0x5e2714 takes its arena size from (root+0x48618, field +0xb0), dumped
+        // UO_CRASH_DUMP=12: the heap head main+0x5e2714 takes its arena size from (root+0x48618, field +0xb0), dumped
         // whole so the size field can be compared with the sizes the game asks for.
         if (dump && atoi(dump) >= 12) {
             uint64_t root = LD64(rt_layout[0].base + 0x28f2000 + 0xde0);
@@ -491,8 +491,8 @@ static void crash_handler(const PlatCrash *x) {
                     rt_logf("    +%#04x: %016llx %016llx\n", k, (unsigned long long)LD64(t + k),
                             (unsigned long long)LD64(t + k + 8));
         }
-        // TOTK_CRASH_DUMP=11: the size table main+0x5e2714 sizes its pools from.
-        // TOTK_CRASH_DUMP=10: the two function pointers main+0x5e2714 calls to learn its arena sizes
+        // UO_CRASH_DUMP=11: the size table main+0x5e2714 sizes its pools from.
+        // UO_CRASH_DUMP=10: the two function pointers main+0x5e2714 calls to learn its arena sizes
         // (0x28f8000+0xef8 and the pool builder's own first field), named through the host-function registry.
         if (dump && atoi(dump) >= 10) {
             uint64_t g = rt_layout[0].base + 0x28f8000;
@@ -512,7 +512,7 @@ static void crash_handler(const PlatCrash *x) {
             }
             rt_log_raw("\n", 1);
         }
-        // TOTK_CRASH_DUMP=9: the objects main+0x5e2714 calls virtually (0x28f9000+0x1e0 .. +0x330) and their vtables,
+        // UO_CRASH_DUMP=9: the objects main+0x5e2714 calls virtually (0x28f9000+0x1e0 .. +0x330) and their vtables,
         // whose entries name the getters that produce the arena sizes.
         if (dump && atoi(dump) >= 9) {
             uint64_t g = rt_layout[0].base + 0x28f9000;
@@ -538,7 +538,7 @@ static void crash_handler(const PlatCrash *x) {
                 rt_log_raw("\n", 1);
             }
         }
-        // TOTK_CRASH_DUMP=8: the buffer-size table main+0x5e2714 sizes its arenas from, found through the pointer the
+        // UO_CRASH_DUMP=8: the buffer-size table main+0x5e2714 sizes its arenas from, found through the pointer the
         // first arena object holds at +0x00 (the object itself is at root+0x3600 and its sizes come from there), which
         // is where a size too large for its own arena comes from.
         if (dump && atoi(dump) >= 8) {
@@ -550,7 +550,7 @@ static void crash_handler(const PlatCrash *x) {
                     rt_logf("    +%#04x: %016llx %016llx\n", k, (unsigned long long)LD64(arena + k),
                             (unsigned long long)LD64(arena + k + 8));
         }
-        // TOTK_CRASH_DUMP=7: the memory the game reserved for itself and the arena fields built on it, which tell a
+        // UO_CRASH_DUMP=7: the memory the game reserved for itself and the arena fields built on it, which tell a
         // failed reservation from a later overwrite.
         if (dump && atoi(dump) >= 7) {
             uint64_t root = LD64(rt_layout[0].base + 0x28f2000 + 0xde0);
@@ -566,7 +566,7 @@ static void crash_handler(const PlatCrash *x) {
                             (unsigned long long)LD64(root + f[k].off));
             }
         }
-        // TOTK_CRASH_DUMP=6: the game's root object (0x28f2000+0xde0) arena fields at +0x3600, the block bases and
+        // UO_CRASH_DUMP=6: the game's root object (0x28f2000+0xde0) arena fields at +0x3600, the block bases and
         // cursors of the two heaps the game builds on memory it reserved itself.
         if (dump && atoi(dump) >= 6) {
             uint64_t root = LD64(rt_layout[0].base + 0x28f2000 + 0xde0);
@@ -579,7 +579,7 @@ static void crash_handler(const PlatCrash *x) {
                             (unsigned long long)LD64(root + 0x3610 + k * 0x20),
                             (unsigned long long)LD64(root + 0x3618 + k * 0x20));
         }
-        // TOTK_CRASH_DUMP=5: main's bump-heap objects: the global at 0x28f2000+0xde0 that main+0x5a55c4 picks, the
+        // UO_CRASH_DUMP=5: main's bump-heap objects: the global at 0x28f2000+0xde0 that main+0x5a55c4 picks, the
         // one at 0x28f4000+0x7e0 its other branch uses, and main+0x5a0a00's thread index, whose record the game
         // reads from the array at 0x28f8000+0xc40.
         if (dump && atoi(dump) >= 5) {
@@ -603,7 +603,7 @@ static void crash_handler(const PlatCrash *x) {
                             (unsigned)LD32(arr + 0x38ull * k + 0x1c), (unsigned long long)LD64(arr + 0x38ull * k + 0x20),
                             (unsigned long long)LD64(arr + 0x38ull * k + 0x30));
         }
-        // TOTK_CRASH_DUMP=4: main's thread-allocator array (0x28f8000 + 0xc38 fallback, +0xc40 records of 0x38
+        // UO_CRASH_DUMP=4: main's thread-allocator array (0x28f8000 + 0xc38 fallback, +0xc40 records of 0x38
         // bytes), which the game indexes by the current thread. A record with a zero base hands out an offset where
         // the caller expects an address.
         if (dump && atoi(dump) >= 4) {
@@ -621,7 +621,7 @@ static void crash_handler(const PlatCrash *x) {
                         (unsigned long long)LD64(a + 0x30));
             }
         }
-        // TOTK_CRASH_DUMP=2: the 0x68-byte block table x19 names (base u64 at +0x30, size u32 at +0x38, a u32 at
+        // UO_CRASH_DUMP=2: the 0x68-byte block table x19 names (base u64 at +0x30, size u32 at +0x38, a u32 at
         // +0x70 and a count at +0x74 per row, the row count at +0x3818), to tell a corrupt table from a wrong index.
         if (dump && atoi(dump) >= 2) {
             for (int which = 0; which < 2; which++) {
@@ -785,7 +785,15 @@ static void check_memory(void) {
     CHECK(q.state == 0 && q.base == g->alias.base && q.size == g->alias.size, "QueryMemory on the free alias region");
     CHECK(mem_map_physical(a, 0x1000) == 0 && LD64(a + 0x10) == 0 && mem_unmap_physical(a, 0x1000) == 0,
           "remapped physical memory is not zeroed");
-    CHECK(mem_map_physical(a, 0x100000000ull) == 0x10801, "MapPhysicalMemory beyond the pool is not LimitReached");
+    // A mapping larger than the whole pool must be refused with LimitReached. The size is taken from the pool, not
+    // written as 4 GiB: Unicorn Overlord asks for an 8 GiB pool, inside which a 4 GiB mapping would legitimately
+    // succeed, and it must still stay inside the alias window so the refusal comes from the pool and not from the
+    // address check.
+    const RtGuestLayout *lay2 = mem_layout();
+    if (lay2->pool + 0x200000 < lay2->alias.size) {
+        uint64_t beyond = (lay2->pool + 0x200000 + 0xffff) & ~(uint64_t)0xffff;
+        CHECK(mem_map_physical(a, beyond) == 0x10801, "MapPhysicalMemory beyond the pool is not LimitReached");
+    }
     mem_query(RT_HOSTFN_BASE + 0x40, &q);
     CHECK(q.state == 0x10 && q.base == RT_HOSTFN_BASE, "QueryMemory on the host-function window");
     mem_query(g->alias.base + g->alias.size + 0x1000, &q);
@@ -860,9 +868,9 @@ static int usage(const char *argv0) {
     return 2;
 }
 
-// Paths for a copied folder (tools/package_build.py). Per path: TOTK_EXEFS, TOTK_ROMFS, TOTK_PROFILE_DIR, else the
-// folder next to totk.exe (exefs with main.npdm, romfs with romfs.bin, any profile folder) if it is there, else the
-// path baked in at build time. A relative value is relative to totk.exe's folder.
+// Paths for a copied folder (tools/package_build.py). Per path: UO_EXEFS, UO_ROMFS, UO_PROFILE_DIR, else the
+// folder next to uo.exe (exefs with main.npdm, romfs with romfs.bin, any profile folder) if it is there, else the
+// path baked in at build time. A relative value is relative to uo.exe's folder.
 static char pp_exefs[PLAT_PATH_MAX * 2], pp_romfs[PLAT_PATH_MAX * 2], pp_profile[PLAT_PATH_MAX * 2];
 
 static const char *portable_path(const char *dir, const char *var, const char *sub, const char *must, char *out, size_t cap,
@@ -887,9 +895,9 @@ static void portable_paths(RtConfig *c) {
     char *cut = n && n < sizeof exe ? plat_last_sep(exe) : NULL;
     if (!cut) return;
     *cut = 0;
-    c->exefs = portable_path(exe, "TOTK_EXEFS", "exefs", "main.npdm", pp_exefs, sizeof pp_exefs, c->exefs);
-    c->romfs = portable_path(exe, "TOTK_ROMFS", "romfs", "romfs.bin", pp_romfs, sizeof pp_romfs, c->romfs);
-    c->profile = portable_path(exe, "TOTK_PROFILE_DIR", "profile", NULL, pp_profile, sizeof pp_profile, c->profile);
+    c->exefs = portable_path(exe, "UO_EXEFS", "exefs", "main.npdm", pp_exefs, sizeof pp_exefs, c->exefs);
+    c->romfs = portable_path(exe, "UO_ROMFS", "romfs", "romfs.bin", pp_romfs, sizeof pp_romfs, c->romfs);
+    c->profile = portable_path(exe, "UO_PROFILE_DIR", "profile", NULL, pp_profile, sizeof pp_profile, c->profile);
 }
 
 int main(int argc, char **argv) {
@@ -902,7 +910,7 @@ int main(int argc, char **argv) {
     }
     rt_game_library();
 #endif
-    mem_init();   // first: claim the guest address space before anything else can land there; reads totk.ini
+    mem_init();   // first: claim the guest address space before anything else can land there; reads uo.ini
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
     plat_crash_hook(crash_handler);
@@ -910,13 +918,13 @@ int main(int argc, char **argv) {
     rt_bp_init();
     prof_start();
     // Timed guest waits (kernel.c block_inner) sleep in whole milliseconds; at the default 15.6 ms tick a 1 ms wait
-    // costs a full tick. TOTK_TIMER_1MS=0 keeps the default for comparison.
-    if (cfg_bool("TOTK_TIMER_1MS")) plat_timer_1ms();
+    // costs a full tick. UO_TIMER_1MS=0 keeps the default for comparison.
+    if (cfg_bool("UO_TIMER_1MS")) plat_timer_1ms();
     cfg = (RtConfig){.exefs = rt_default_exefs, .romfs = rt_default_romfs, .profile = rt_default_profile,
-                     .gpu = cfg_get("TOTK_GPU")};
+                     .gpu = cfg_get("UO_GPU")};
     portable_paths(&cfg);   // command-line paths below still win
     if (cfg.gpu && strcmp(cfg.gpu, "null") && strcmp(cfg.gpu, "vulkan")) {
-        rt_logf("TOTK_GPU must be null or vulkan, not '%s'\n", cfg.gpu);
+        rt_logf("UO_GPU must be null or vulkan, not '%s'\n", cfg.gpu);
         return 2;
     }
     const char *mode = NULL;
@@ -960,7 +968,7 @@ int main(int argc, char **argv) {
     if (!strcmp(mode, "--probe-crash-null")) return probe_crash(1);
     if (!strcmp(mode, "--probe-cfg")) return probe_cfg();
 #ifdef _WIN32
-    if (!strcmp(mode, "--probe-dpi")) return probe_dpi();   // the Win32 DPI awareness of totk.manifest
+    if (!strcmp(mode, "--probe-dpi")) return probe_dpi();   // the Win32 DPI awareness of uo.manifest
 #endif
     if (!strcmp(mode, "--probe-kernel")) return probe_kernel();
     if (!strcmp(mode, "--probe-ipc")) return probe_ipc();

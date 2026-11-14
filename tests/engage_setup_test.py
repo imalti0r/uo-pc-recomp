@@ -154,7 +154,7 @@ class SetupTest(unittest.TestCase):
             pipeline.command = lambda *args, **kwargs: None
             pipeline.dest.mkdir(exist_ok=True)
             pipeline.build.mkdir(parents=True)
-            for name in ('engage.exe', 'engage_game.dll', 'romfs-index.bin', 'SDL3.dll', 'totk_xlate.exe', 'totk_xlate.id'):
+            for name in ('engage.exe', 'engage_game.dll', 'romfs-index.bin', 'SDL3.dll', 'uo_xlate.exe', 'uo_xlate.id'):
                 (pipeline.build / name).write_bytes(b'synthetic host output')
             for directory in (pipeline.extracted / 'ExeFS', pipeline.extracted / 'packed-romfs', pipeline.work / 'fonts'):
                 directory.mkdir(parents=True)
@@ -176,7 +176,7 @@ class SetupTest(unittest.TestCase):
             self.assertTrue((root / 'romfs-index.bin').exists())
             self.assertTrue((root / 'engage_game.dll').exists())
             launcher = (root / 'Play Engage.cmd').read_text()
-            self.assertNotIn('TOTK_', launcher)
+            self.assertNotIn('UO_', launcher)
             self.assertIn('%*', launcher)
 
     def test_failed_pair_replacement_restores_previous_executable_and_dll(self):

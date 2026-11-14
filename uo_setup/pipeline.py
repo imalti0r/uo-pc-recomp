@@ -195,8 +195,11 @@ class Pipeline:
             self.python('tools/extract_uo.py', '--config', config, '--out', self.extracted,
                         '--tool', self.paths.extractor, '--logs', self.work / 'logs')
             self.reporter.progress('extract', 'pack')
-            # The RomFS of this game is five CPK archives with no loose files: the packer only has to write the
-            # index and copy the image, so a second 3.4 GiB copy is avoided by pointing the runtime at the tree.
+            # The runtime reads <romfs>/romfs.bin and index.json (runtime/romfs.c), not a loose tree, so the extracted
+            # CPK archives are packed into that image here and the build points at it. The loose tree stays in the
+            # work folder and is removed with it.
+            self.python('tools/pack_romfs.py', '--source', self.extracted / 'RomFS',
+                        '--out', self.extracted / 'packed-romfs')
         finally:
             config.unlink(missing_ok=True)
 
@@ -221,7 +224,7 @@ class Pipeline:
         runtime = self.paths.root / 'bin/uo.exe'
         prebuilt = ['--runtime-exe', runtime] if runtime.is_file() else []
         self.python('tools/build_uo.py', '--extracted', self.extracted, '--translator', self.paths.xlate.parent,
-                    '--gen', self.generated, '--out', self.build, '--romfs', self.extracted / 'RomFS',
+                    '--gen', self.generated, '--out', self.build, '--romfs', self.extracted / 'packed-romfs',
                     '--profile', self.dest / 'profile', '--toolchain', self.paths.llvm, '--deps', self.paths.deps,
                     '--ninja', self.paths.ninja, '--runtime', self.paths.runtime, '--jobs', min(8, os.cpu_count() or 1),
                     *prebuilt)
@@ -229,7 +232,7 @@ class Pipeline:
     def prepare(self):
         self.reporter.progress('prepare', 'work')
         self.command([self.build / 'uo.exe', '--selftest'], timeout=120)
-        for source, target in ((self.extracted / 'RomFS', self.dest / 'romfs'),
+        for source, target in ((self.extracted / 'packed-romfs', self.dest / 'romfs'),
                                (self.extracted / 'ExeFS', self.dest / 'exefs')):
             if source.is_dir():
                 if target.exists():
@@ -239,7 +242,7 @@ class Pipeline:
                 shutil.copytree(source, target) if target.name == 'exefs' else shutil.move(str(source), str(target))
                 self.state.setdefault('assets', []).append(target.name)
                 write_json(self.dest / 'uo-install.json', self.state)
-        for pattern in ('*.dll', 'totk_xlate.*'):
+        for pattern in ('*.dll', 'uo_xlate.*'):
             for source in self.build.glob(pattern):
                 self.deploy(source)
         self.deploy(self.build / 'romfs-index.bin')

@@ -32,7 +32,7 @@ BLOCKED_NAMES = {"main", "sdk", "rtld", "subsdk0", "subsdk1", "main.npdm",
                  "control.nacp", "icon.jpg", "engage.ico"}
 
 # Written by the code generator into every file it emits.
-GENERATED_MARKER = "TOTK_RECOMP_" + "GENERATED_FROM_GAME_CODE"
+GENERATED_MARKER = "UO_RECOMP_" + "GENERATED_FROM_GAME_CODE"
 
 # A prod.keys / title.keys line: name containing key, kek or seed, then hex.
 KEY_LINE = re.compile(

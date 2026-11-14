@@ -54,7 +54,7 @@ typedef struct RtDispatchStats {
     uint64_t host_fns;        // rt_register_host entries
 } RtDispatchStats;
 RtDispatchStats rt_dispatch_stats(void);
-void rt_noabort_range(uint64_t *lo, uint64_t *hi);   // TOTK_NOABORT: the div.
+void rt_noabort_range(uint64_t *lo, uint64_t *hi);   // UO_NOABORT: the div.
                                                       // diag abort range (0,0 off)
 
 // Runtime fatal error: message to stderr, then exit. Used by the dispatcher and the stubs.
