@@ -16,9 +16,9 @@ class Home(ttk.Frame):
         super().__init__(parent)
         self.app, self.pending = app, None
         art = Path(__file__).with_name('art')
-        with Image.open(art / 'cathedral.jpg') as image:
+        with Image.open(art / 'backdrop.jpg') as image:
             self.scene = image.convert('RGB')
-        with Image.open(art / 'title.webp') as image:
+        with Image.open(art / 'wordmark.png') as image:
             self.wordmark = image.convert('RGBA')
             self.wordmark = self.wordmark.crop(self.wordmark.getbbox())
         summary = ttk.Frame(self, padding=(34, 12), height=121)
@@ -83,7 +83,7 @@ class Home(ttk.Frame):
         self.dot = self.canvas.create_oval(left, y - 4, left + 8, y + 4, fill='#80c973', outline='')
         self.status = self.canvas.create_text(left + 19, y, text='', fill=INK, anchor='w', font=(UI_FONT, 11, 'bold'))
         self.canvas.create_line(left + 162, y - 10, left + 162, y + 10, fill='#465266')
-        self.canvas.create_text(left + 176, y, text='Game 2.0.0', fill=MUTED, anchor='w', font=(UI_FONT, 11))
+        self.canvas.create_text(left + 176, y, text='Game 1.05', fill=MUTED, anchor='w', font=(UI_FONT, 11))
         self.play_button.set_size(width, 64)
         self.canvas.create_window(left, int(h * .65), window=self.play_button, anchor='nw', width=width, height=64)
         self.canvas.create_text(left + width // 2, int(h * .65) + 86, text='F1 for in-game settings',

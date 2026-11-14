@@ -311,7 +311,7 @@ class Launcher:
         self.setup_existing_button.pack(anchor='w', pady=(12, 28))
         ttk.Separator(page).pack(fill='x')
         ttk.Label(page, text='Starting with game files?', style='SummaryHeading.TLabel').pack(anchor='w', pady=(28, 6))
-        ttk.Label(page, text='Choose your base game, update 2.0.0, keys and firmware. Setup builds the game on this PC.',
+        ttk.Label(page, text='Choose your base game, update 1.05, keys and firmware. Setup builds the game on this PC.',
                   style='Muted.TLabel', wraplength=850).pack(anchor='w')
         self.setup_new_button = ttk.Button(page, text='Set up from my game files', command=self.setup)
         self.setup_new_button.pack(anchor='w', pady=(12, 0))
