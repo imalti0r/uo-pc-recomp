@@ -141,7 +141,7 @@ class Form(BaseForm):
     def problems(self):
         found = []
         combined = bool(self.xci.strip())
-        finished = bool(self.dest.strip()) and installed_state(self.dest) == 'done'
+        finished = bool(self.dest.strip()) and (installed_state(self.dest) or {}).get('done') == list(STEP_ORDER[1:])
         need = ('xci', 'keys', 'firmware') if combined else ('base', 'update', 'keys', 'firmware')
         if not finished:
             for name in need:
@@ -183,7 +183,11 @@ def layout(root=None):
 
 
 def installed_state(dest):
-    """'done' when dest holds a finished install (deploy wrote its state file), else None."""
+    """This port's state dict when dest holds an installation of it, else None.
+
+    A partially installed folder counts: setup records each finished step in uo-install.json, so a run that stopped
+    during compile must be resumable. Returning only a finished install here made that folder look foreign, and setup
+    then refused it with 'the install folder is not empty'."""
     path = Path(dest) / 'uo-install.json'
     if not path.is_file():
         return None
@@ -191,7 +195,9 @@ def installed_state(dest):
         state = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return None
-    return 'done' if state.get('done') == list(STEP_ORDER[1:]) else None
+    if not isinstance(state, dict) or state.get('title_id') != TITLE or state.get('format') != 1:
+        return None
+    return state
 
 
 class Catalog(BaseCatalog):

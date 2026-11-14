@@ -48,12 +48,31 @@ def tcltk_files():
 
 
 def setup_icon(path):
-    """The launcher's icon: runtime/uo.ico, the same rounded-square key-art tile as uo.exe, so setup and the game
-    read as one product. Copied rather than drawn, so there is only one icon to keep current."""
-    source = ROOT / 'runtime/uo.ico'
-    if not source.is_file():
-        raise ValueError(f'{source} is missing: run tools/make_icon.py first')
-    shutil.copy2(source, path)
+    """The launcher's icon: runtime/uo.ico, the same rounded-square key-art tile as uo.exe.
+
+    Copied rather than drawn, so there is only one icon to keep current. When that file is absent — a checkout without
+    the artwork, or a package that did not ship it — a plain placeholder of the same shape is written instead, so a
+    build never fails over an icon."""
+    source = ROOT / 'runtime' / 'uo.ico'
+    if source.is_file():
+        shutil.copy2(source, path)
+        return
+    placeholder_icon(path)
+
+
+def placeholder_icon(path):
+    """A 32x32 rounded blue tile, drawn here: the fallback when runtime/uo.ico is absent."""
+    size, radius = 32, 7
+    pixels = bytearray()
+    for y in range(size):
+        for x in range(size):
+            # A rounded square: outside the corner circles the tile is transparent.
+            dx = max(radius - x, x - (size - 1 - radius), 0)
+            dy = max(radius - y, y - (size - 1 - radius), 0)
+            inside = dx * dx + dy * dy <= radius * radius
+            pixels.extend((40, 60, 96, 255) if inside else (0, 0, 0, 0))
+    dib = struct.pack('<IIIHHIIIIII', 40, size, size * 2, 1, 32, 0, len(pixels), 0, 0, 0, 0) + pixels + bytes(128)
+    path.write_bytes(struct.pack('<HHH', 0, 1, 1) + struct.pack('<BBBBHHII', size, size, 0, 0, 1, 32, len(dib), 22) + dib)
 
 
 def copy_sources(out):
@@ -72,7 +91,9 @@ def copy_sources(out):
         if source.suffix.lower() not in {'.py', '.c', '.cc', '.cpp', '.h', '.hpp', '.json', '.ps1', '.txt',
                                         '.manifest', '.inl', '.glsl', '.comp', '.spv', '.inc'} and relative.as_posix() not in {
                 'runtime/ui/fonts/Roboto-Medium.ttf', 'uo_setup/art/backdrop.jpg',
-                'uo_setup/art/wordmark.png', 'uo_setup/art/README.md'}:
+                'uo_setup/art/wordmark.png', 'uo_setup/art/README.md',
+                # The icon is embedded into the uo.exe the player's machine compiles, so the package must carry it.
+                'runtime/uo.ico'}:
             continue
         target = out / relative
         target.parent.mkdir(parents=True, exist_ok=True)
