@@ -1,0 +1,19 @@
+// Shared by the system overrides: runtime/ov_system.c, ov_input.c, ov_media.c and ov_gfx.c, and their probe.
+// oe_push_message, oe_set_focus and ov_nv_state are in gfx.h (the window posts focus messages, the NVN layer
+// allocates through the recorded callbacks).
+#pragma once
+#include <stddef.h>
+#include <stdint.h>
+
+#include "gfx.h"
+
+// ---- ov_system.c
+int ov_probe_exit_sections(void);
+int ov_probe_network_account(void);
+int ov_handheld(void);                     // TOTK_OPERATION_MODE=handheld (default docked); fatal on another value
+void ov_operation_mode_flip(void);         // report the other console mode for a second: the game rebuilds its display
+int ov_op_flipped(void);                   // whether that flip is in effect right now
+int ov_operation_mode_flip_ended(void);    // true once, at the moment the flip ends
+const char *ov_language(void);             // the game's language, a Switch language code ("en-US", "zh-Hans", ...)
+const char *ov_shared_font_dir(char *buf, size_t n);   // configured path (exe-relative), sibling fonts/shared-fonts, extraction
+uint64_t ov_bfttf_size(const uint8_t *p, uint64_t len); // decoded font size of a BFTTF image, 0 if it is not one

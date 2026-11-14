@@ -1,0 +1,8 @@
+# Unicorn Overlord: title screen -> New Game.
+# Frames are 60 Hz ticks of game time since the first present.
+2100 A 4
+3000 A 4
+3200 A 4
+3400 A 4
+3600 A 4
+3800 A 4

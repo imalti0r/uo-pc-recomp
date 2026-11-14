@@ -1,0 +1,21 @@
+# UNICORN OVERLORD 1.05 only. Game resolution, read from the patch page.
+#
+# The game composes its whole frame (canvas, UI and swapchain) in one size, built from a pair of immediates:
+#   main+0x5e3a4c  mov  x24, #0x780            w = 1920
+#   main+0x5e3a58  movk x24, #0x438, lsl #32   h = 1080
+#   main+0x5e3a68  str  x24, [sp, #0x58]       the pair goes into a structure the display setup reads
+# and it passes the same pair to the window builder as separate words:
+#   main+0x5e3bbc  mov  w4, #0x438             h
+#   main+0x5e3bd4  mov  w3, #0x780             w
+#
+# The patch reads the size from the patch page instead (+64 the width, +68 the height, the slots Engage's
+# engage_output set uses), so runtime/resolution.c chooses it and a settings change needs no new build.
+#
+# Only the immediates are replaced. x22, which the two instructions between the first pair set up, stays untouched;
+# x16 is call-clobbered and holds nothing live at either site.
+build main 9c3116f0333ea157526612d17354b3755737c4f2
+set uo_output TOTK_UO_OUTPUT 0
+site uo_output main 005e3a4c d280f018 @page:x16 f9402218
+site uo_output main 005e3a58 f2c08718 d503201f
+site uo_output main 005e3bbc 52808704 @page:x16 b9404604
+site uo_output main 005e3bd4 5280f003 @page:x16 b9404203

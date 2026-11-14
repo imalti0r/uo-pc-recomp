@@ -1,0 +1,4 @@
+# Unicorn Overlord: press A late, once the title screen has finished streaming.
+4500 A 4
+4700 A 4
+4900 A 4

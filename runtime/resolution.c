@@ -1,0 +1,611 @@
+// Game resolution: the size the game composes its frame in (its output: canvas, UI and swapchain) and the size of its
+// 3D scene, above the shipped 1920x1080 and 1600x900. The game does the rendering itself, as with the community
+// resolution mods (UltraCam, Visual Fixes): the patch sets output and scene (recomp/patches-v121.txt,
+// patches-v143.txt; MacNativeGames games/totk/runtime/game_patches.c and game_patches_v143.c, MIT, Copyright (c) 2026
+// MacNativeGames contributors) make the game read both sizes from the patch page, and the texture heap that holds the
+// output- and scene-sized render targets grows with them.
+//
+// Settings, read at start: TOTK_OUTPUT_RES = <w>x<h> (default 1920x1080, the game's own), TOTK_RENDER_SCALE = the
+// scene's size relative to the output: "game" (default, 5/6, the game's 1600x900 at 1080p) or a percentage; above 100
+// the game supersamples its scene, which smooths edges (anti-aliasing) at the cost of GPU time. The game's own final
+// pass (FSR 1 EASU) scales the scene to the output; the present scales the output to the window (vk_fsr.c).
+//
+// Patch page: +16 the scene size {w, h} as floats, +32 the output size and +48 the swapchain size as {w, h} in one
+// 64-bit word, +40 the renderer (1.2.1) or display configuration (1.4.3) the patched code stores there.
+// +56 the camera's aspect ratio as a float when the output is not 16:9 (set aspect), +60 the field-of-view factor
+// (set fov, res_fov_live).
+// 1.4.3 scales the scene it reads by output width / 1920 (a 2560x1440 output renders its 1600x900 scene at 2128x1200;
+// MacNativeGames measured the same), so its page holds the wanted size divided by that factor and the game's 5/6 needs
+// no scene patch. 1.2.1 renders the size it reads (1600x900 on a 2560x1440 output): its page holds the wanted size, and
+// the scene set is on whenever the output differs from 1920x1080.
+//
+// Heap: agl's DynamicTextureAllocator is one fixed heap, "DynamicTextureAllocatorMem" in
+// System/HeapSize/Product.Nin_NX_NVN.HeapDef.byml.zs (113664 KiB, carved from "Graphics", 201728 KiB). At 2560x1440
+// the shipped size runs out at the title screen. Both heaps grow by the same amount: the shipped size times the output's
+// pixel ratio above 1920x1080 plus the scene's above 1600x900 (MacNativeGames' measurement: a 3440x1440 canvas with a
+// 4620x1935 scene crashed at +258 MiB and loaded at +400 MiB; this formula gives +750 MiB there). romfs.c serves the
+// rewritten table (res_heapdef_build) in place of the original; memory.c adds the amount to the application pool, so
+// no other heap shrinks. Without the rewritten table (a RomFS that lacks it, a format this code does not know) the
+// patch sets stay off and the game keeps its own sizes.
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <zstd.h>
+
+#include "cfg.h"
+#include "gfx.h"
+#include "host.h"
+#include "ov.h"
+// runtime/ui/menu.cpp: the monitor the window is on, for capping the game resolution (0 when unknown)
+int gfx_window_monitor_size(int *w, int *h);
+
+#define BASE_W 1920
+#define BASE_H 1080
+#define SCENE_W 1600
+#define SCENE_H 900
+#define DTA_KIB 113664u      // DynamicTextureAllocatorMem, shipped
+#define SCENE_MAX 4096       // per side, as MacNativeGames' TOTK_RENDER_RES
+
+static struct {
+    int decided;
+    unsigned ow, oh, sw, sh;   // output and scene
+    int scene_set;             // the scene differs from the game's 5/6 of the output
+    int heapdef_ok;            // romfs.c serves the grown HeapDef
+    int on;                    // res_init switched the patch sets on
+} R;
+
+// The window's size (TOTK_WINDOW_SIZE), or the monitor's when that is not readable. The game resolution is kept
+// at or below it: a larger picture would be scaled back down on its way to the screen, throwing away what DLSS
+// just upscaled, so every DLSS mode would look the same. 0 when neither is known.
+static void window_cap(int *cw, int *ch) {
+    unsigned w = 0, h = 0;
+    char tail;
+    *cw = *ch = 0;
+    if (sscanf(cfg_value("TOTK_WINDOW_SIZE"), "%ux%u%c", &w, &h, &tail) == 2 && w >= 320 && h >= 240) {
+        *cw = (int)w, *ch = (int)h;
+        return;
+    }
+    gfx_window_monitor_size(cw, ch);
+}
+
+// The largest 16:9-preserving size at or below w x h, even dimensions.
+static void fit_into(unsigned *w, unsigned *h, int cw, int ch) {
+    if (cw <= 0 || ch <= 0 || ((int64_t)*w <= cw && (int64_t)*h <= ch)) return;
+    double f = fmin((double)cw / *w, (double)ch / *h);
+    unsigned nw = (unsigned)(*w * f) & ~1u, nh = (unsigned)(*h * f) & ~1u;
+    if (nw >= 1280 && nh >= 720) {
+        rt_log("resolution: %ux%u is larger than the %dx%d window; %ux%u", *w, *h, cw, ch, nw, nh);
+        *w = nw, *h = nh;
+    }
+}
+
+static void decide(void) {
+    if (R.decided) return;
+    R.decided = 1;
+    R.ow = BASE_W;
+    R.oh = BASE_H;
+    const char *o = cfg_value("TOTK_OUTPUT_RES");
+    unsigned w = 0, h = 0;
+    char tail;
+    if (sscanf(o, "%ux%u%c", &w, &h, &tail) == 2 && w >= 1280 && h >= 720 && w <= 7680 && h <= 4320) {
+        int cw, ch;
+        window_cap(&cw, &ch);
+        fit_into(&w, &h, cw, ch);
+        R.ow = w & ~1u;
+        R.oh = h & ~1u;
+    } else {
+        rt_log("resolution: TOTK_OUTPUT_RES=%s is not <width>x<height> in 1280x720..7680x4320; 1920x1080", o);
+    }
+    const char *s = cfg_value("TOTK_RENDER_SCALE");
+    double k = 5.0 / 6.0;
+    if (strcmp(s, "game")) {
+        char *end;
+        double pct = strtod(s, &end);
+        if (end != s && !*end && pct >= 25 && pct <= 400) {
+            k = pct / 100.0;
+            R.scene_set = 1;
+        } else {
+            rt_log("resolution: TOTK_RENDER_SCALE=%s is not game or a percentage 25..400; game", s);
+        }
+    }
+    double sw = R.ow * k, sh = R.oh * k;
+    double fit = fmin(1.0, fmin(SCENE_MAX / sw, SCENE_MAX / sh));
+    if (fit < 1.0) R.scene_set = 1;
+    R.sw = (unsigned)(sw * fit + 0.5);
+    R.sh = (unsigned)(sh * fit + 0.5);
+}
+
+static int bigger(void) {
+    decide();
+    return R.ow != BASE_W || R.oh != BASE_H || R.scene_set;
+}
+
+// Unicorn Overlord's frame size (uo_apply below) and the output it is presented at, which res_heap_extra_kib reads.
+static unsigned U_draw[2] = {BASE_W, BASE_H}, U_target[2] = {BASE_W, BASE_H};
+
+uint64_t res_heap_extra_kib(void) {
+    if (RT_ENGAGE) return 0;
+    // Unicorn Overlord draws its own 1920x1080 frame whatever the output is, so its texture heap never grows: the
+    // upscaler works on the present chain, outside the game's heaps.
+    if (RT_UO) return 0;
+    if (!bigger()) return 0;
+    double grow = fmax(0.0, (double)R.ow * R.oh / (BASE_W * BASE_H) - 1.0) +
+                  fmax(0.0, (double)R.sw * R.sh / (SCENE_W * SCENE_H) - 1.0);
+    if (grow <= 0) return 0;
+    return (uint64_t)ceil(DTA_KIB * (1.0 + grow) / 1024.0) * 1024 - DTA_KIB;
+}
+
+uint64_t res_heap_extra_bytes(void) { return ((res_heap_extra_kib() << 10) + 0x1fffff) & ~0x1fffffull; }
+
+// ---- the HeapDef table. BYML version 2..7, little endian ("YB"): a hash node is {u8 0xC1, u24 count} and count
+// entries {u24 key index, u8 type, u32 value}; an int (type 0xD1) is stored in the entry, so a size changes in place.
+typedef struct { uint8_t *p; size_t n; uint32_t keys; } Byml;
+
+static int u32_at(const Byml *b, size_t off, uint32_t *v) {
+    if (off + 4 > b->n) return 0;
+    memcpy(v, b->p + off, 4);
+    return 1;
+}
+
+static const char *key_name(const Byml *b, uint32_t k) {
+    uint32_t head, at;
+    if (!u32_at(b, b->keys, &head) || (head & 0xff) != 0xc2 || k >= head >> 8 || !u32_at(b, b->keys + 4 + 4 * k, &at) ||
+        b->keys + at >= b->n || !memchr(b->p + b->keys + at, 0, b->n - b->keys - at))
+        return NULL;
+    return (const char *)b->p + b->keys + at;
+}
+
+// The offset of the value of hash node `node`'s entry `name`, which must have type `type`; 0 when there is none.
+static size_t field(const Byml *b, uint32_t node, const char *name, uint8_t type) {
+    uint32_t head;
+    if (!u32_at(b, node, &head) || (head & 0xff) != 0xc1) return 0;
+    for (uint32_t i = 0; i < head >> 8; i++) {
+        uint32_t e;
+        if (!u32_at(b, node + 4 + 8 * (size_t)i, &e)) return 0;
+        const char *k = key_name(b, e & 0xffffff);
+        if (k && !strcmp(k, name)) return e >> 24 == type ? node + 8 + 8 * (size_t)i : 0;
+    }
+    return 0;
+}
+
+static size_t heap_size_field(const Byml *b, uint32_t heaps, const char *heap) {
+    size_t at = field(b, heaps, heap, 0xc1);
+    uint32_t node;
+    return at && u32_at(b, at, &node) ? field(b, node, "Size", 0xd1) : 0;
+}
+
+int res_heapdef_build(const void *in, size_t n, void **out, size_t *out_n) {
+    uint64_t extra = res_heap_extra_kib();
+    *out = NULL;
+    if (!extra) return 0;
+    if (ZSTD_getDictID_fromFrame(in, n)) {
+        rt_log("resolution: the HeapDef table needs a zstd dictionary; the game keeps its own resolution");
+        return 0;
+    }
+    unsigned long long raw = ZSTD_getFrameContentSize(in, n);
+    if (raw == ZSTD_CONTENTSIZE_UNKNOWN || raw == ZSTD_CONTENTSIZE_ERROR || raw > (64u << 20)) {
+        rt_log("resolution: the HeapDef table is not a zstd frame with a size; the game keeps its own resolution");
+        return 0;
+    }
+    Byml b = {malloc((size_t)raw), (size_t)raw, 0};
+    if (!b.p) return 0;
+    size_t got = ZSTD_decompress(b.p, b.n, in, n);
+    uint32_t root, heaps = 0;
+    uint16_t ver = 0;
+    if (!ZSTD_isError(got) && got == b.n && b.n >= 16) memcpy(&ver, b.p + 2, 2);
+    size_t heaps_at = 0, dta_at = 0, gfx_at = 0;
+    if (ver >= 2 && ver <= 7 && !memcmp(b.p, "YB", 2) && u32_at(&b, 4, &b.keys) && u32_at(&b, 12, &root) &&
+        (heaps_at = field(&b, root, "Heaps", 0xc1)) && u32_at(&b, heaps_at, &heaps)) {
+        dta_at = heap_size_field(&b, heaps, "DynamicTextureAllocatorMem");
+        gfx_at = heap_size_field(&b, heaps, "Graphics");
+    }
+    if (!dta_at || !gfx_at) {
+        rt_log("resolution: the HeapDef table has no DynamicTextureAllocatorMem / Graphics sizes; the game keeps its own "
+               "resolution");
+        free(b.p);
+        return 0;
+    }
+    int32_t dta, gfx;
+    memcpy(&dta, b.p + dta_at, 4);
+    memcpy(&gfx, b.p + gfx_at, 4);
+    int32_t dta2 = dta + (int32_t)extra, gfx2 = gfx + (int32_t)extra;
+    memcpy(b.p + dta_at, &dta2, 4);
+    memcpy(b.p + gfx_at, &gfx2, 4);
+    size_t cap = ZSTD_compressBound(b.n);
+    void *z = malloc(cap);
+    size_t zn = z ? ZSTD_compress(z, cap, b.p, b.n, 9) : 0;
+    free(b.p);
+    if (!z || ZSTD_isError(zn)) {
+        free(z);
+        return 0;
+    }
+    *out = z;
+    *out_n = zn;
+    rt_log("resolution: HeapDef DynamicTextureAllocatorMem %d -> %d KiB, Graphics %d -> %d KiB", dta, dta2, gfx, gfx2);
+    return 1;
+}
+
+void res_heapdef_served(void) { R.heapdef_ok = 1; }
+
+// ---- start: the patch page and the sets
+static uint64_t pack(unsigned w, unsigned h) { return (uint64_t)h << 32 | w; }
+
+// Which window/upscaler settings the live path has already applied. Each change writes the new sizes into the patch
+// page and calls res_engage_live, which re-asks the game for its buffers (see below). On Engage the window size IS the
+// game resolution, so it is tracked too: without it a size change never reached engage_apply and the game kept drawing
+// the resolution it started with.
+static unsigned g_live_seen;
+static char g_live_up[16], g_live_mode[16], g_live_res[24], g_live_scale[8], g_live_window[24];
+
+// The DLSS mode's upscale ratio (see vk_dlss.cpp mode_of): the game draws at 1/ratio of the target resolution and
+// DLSS brings it up. DLAA (and FSR, which scales on the present) keeps the target size.
+static float dlss_shrink(void) {
+    if (strcmp(cfg_value("TOTK_UPSCALER"), "dlss")) return 1.0f;
+    const char *m = cfg_value("TOTK_DLSS_MODE");
+    if (!strcmp(m, "quality")) return 1.5f;                        // 66.7 % of the game resolution
+    if (!strcmp(m, "balanced")) return 1.0f / 0.58f;               // 58 %
+    if (!strcmp(m, "performance")) return 2.0f;                    // 50 %
+    if (!strcmp(m, "ultra")) return 3.0f;                          // 33.3 %
+    return 1.0f;   // DLAA, and anything unknown
+}
+
+// The size DLSS upscales to (Engage): the chosen game resolution after the window limit, before the DLSS mode
+// divides it into the size the game actually draws. Zero until res_init ran.
+static unsigned E_target[2];
+// What Engage actually draws in, and its 3D scene (engage_apply): the overlay's lines (res_sizes) report these, not
+// the TotK path's R, which Engage never fills.
+static unsigned E_draw[2], E_scene[2];
+
+void res_engage_target(unsigned out[2]) {
+    out[0] = E_target[0];
+    out[1] = E_target[1];
+}
+
+// What the game was told to draw and the resolution DLSS upscales that to, both as currently configured. The overlay
+// reports these instead of the last present's sizes: those belong to the previous setting for a frame or two after a
+// change, which showed a stale scene size against the new game resolution.
+void res_engage_sizes(unsigned draw[2], unsigned target[2]) {
+    draw[0] = E_draw[0], draw[1] = E_draw[1];
+    target[0] = E_target[0], target[1] = E_target[1];
+}
+
+// Writes the wanted output size and 3D scale into the patch page and switches the sets. Called at start and again on
+// every settings change (res_engage_live): the game reads these values when it builds its buffers and camera, so the
+// change reaches the game without a restart.
+static void engage_apply(const char *why) {
+    unsigned w = BASE_W, h = BASE_H;
+    const char *s = cfg_value("TOTK_RENDER_SCALE");
+    // The window is the resolution: one setting, not a separate game size. The game composes its picture in the
+    // window's size, and DLSS's mode divides that into what it renders. A picture larger than the window would be
+    // scaled back down on its way to the screen, throwing away what DLSS upscaled.
+    unsigned int wn = 0, hn = 0;
+    char tail;
+    if (sscanf(cfg_value("TOTK_WINDOW_SIZE"), "%ux%u%c", &wn, &hn, &tail) == 2 && wn >= 1280 && hn >= 720) {
+        // Engage takes 16:9 sizes from its smallest (1280x720) up to 3840x2160: anything else falls back
+        // to the 16:9 size nearest below the window, so the picture never spills past the screen.
+        static const unsigned kOk[][2] = {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3200, 1800}, {3840, 2160}};
+        unsigned pick_w = 0, pick_h = 0;
+        for (size_t i = 0; i < sizeof kOk / sizeof *kOk; i++)
+            if (kOk[i][0] == wn && kOk[i][1] == hn) pick_w = wn, pick_h = hn;
+        if (!pick_w) {
+            for (size_t i = 0; i < sizeof kOk / sizeof *kOk; i++)
+                if (kOk[i][0] <= wn && kOk[i][1] <= hn) pick_w = kOk[i][0], pick_h = kOk[i][1];
+            if (!pick_w) pick_w = 1280, pick_h = 720;
+        }
+        if (pick_w != wn || pick_h != hn)
+            rt_log("resolution: the %ux%u window is not a 16:9 size Engage draws; the game uses %ux%u", wn, hn, pick_w, pick_h);
+        w = pick_w, h = pick_h;
+    } else rt_log("resolution: TOTK_WINDOW_SIZE=%s is not <width>x<height>; the game draws 1920x1080",
+                  cfg_value("TOTK_WINDOW_SIZE"));
+    E_target[0] = w & ~1u, E_target[1] = h & ~1u;
+    // DLSS Quality/Performance/Ultra Performance: the game draws smaller and DLSS upscales to the size above,
+    // which is what the window presents (vk_dlss.cpp takes its output from res_engage_target). DLSS accepts inputs
+    // well below 1280x720 (its own optimal size for 1080p Performance is 960x540), so only a floor that keeps the
+    // buffer sane applies.
+    const float shrink = dlss_shrink();
+    if (shrink > 1.0f) {
+        unsigned rw = (unsigned)(w / shrink + 0.5f) & ~1u, rh = (unsigned)(h / shrink + 0.5f) & ~1u;
+        if (rw >= 640 && rh >= 360) {
+            rt_log("resolution: DLSS x%.2f: the game draws %ux%u and DLSS upscales to %ux%u", shrink, rw, rh, w, h);
+            w = rw, h = rh;
+        } else rt_log("resolution: DLSS x%.2f on %ux%u would draw below 640x360; the game keeps %ux%u", shrink, w, h, w, h);
+    }
+    float scale = 1;
+    int fixed = strcmp(s, "game") != 0;
+    // DLSS already divides the game resolution by its mode's ratio to decide what the game draws. A second shrink from
+    // the 3D render scale would compound with it (1080p at Performance and 50 % would draw 480p), and the game's own
+    // per-scene scale would break the exact ratio DLSS requires. So with DLSS the scene is drawn at exactly the size
+    // DLSS computes: scale 1.0, the scene patch on, whatever the setting says.
+    const int dlss = RT_ENGAGE && !strcmp(cfg_value("TOTK_UPSCALER"), "dlss");
+    if (dlss) {
+        fixed = 1;
+        scale = 1.0f;
+    } else if (fixed) {
+        // Any percentage the player types, 25..200 (the menu's field allows the same range): clamped to the limits and
+        // rounded to a whole percent. Below 25 the scene would be too coarse to see; above 200 the texture heap and the
+        // GPU time grow far faster than the picture improves.
+        char *end;
+        double pct = strtod(s, &end);
+        if (end != s && !*end && isfinite(pct) && pct > 0) {
+            if (pct < 25) pct = 25;
+            if (pct > 200) pct = 200;
+            scale = (float)(lround(pct) / 100.0);
+        } else {
+            fixed = 0;
+            rt_log("resolution: Engage render scale %s is not a percentage; using game", s);
+        }
+    }
+    int output = rt_patch_set("engage_output"), scene = rt_patch_set("engage_scene");
+    if (output < 0 || scene < 0) {
+        rt_log("resolution: regenerate Engage C with its resolution patch sets to apply these settings");
+        return;
+    }
+    uint8_t *page = rt_patch_page();
+    memcpy(page + 64, &w, 4);
+    memcpy(page + 68, &h, 4);
+    memcpy(page + 72, &scale, 4);
+    // engage_output stays on even at the game's own size: its sites feed a store Unity makes while it sets up its
+    // display, so a size switched off here would leave the last written value in Unity's ScreenManager fields. Turning
+    // it off at 1280x720 left the game drawing 720p after a return to a larger size.
+    rt_patch_switch(output, 1);
+    // engage_scene replaces a load, so switching it off reads the asset's own renderScale: no stale value, and "game"
+    // keeps meaning "whatever the game chose".
+    rt_patch_switch(scene, fixed);
+    // what the overlay reports (res_sizes): the size drawn and the 3D scene inside it
+    E_draw[0] = w, E_draw[1] = h;
+    E_scene[0] = (unsigned)(w * scale + 0.5f), E_scene[1] = (unsigned)(h * scale + 0.5f);
+    rt_log("resolution: Engage output %ux%u, 3D scale %s%s (%s)", w, h,
+           dlss ? "100" : s, dlss ? "% (DLSS sets the ratio)" : fixed ? "%" : " (game controlled)", why);
+}
+
+static void engage_init(void) {
+    engage_apply("start");
+    // the live path remembers what start already applied, so the first settings change is the first change
+    snprintf(g_live_res, sizeof g_live_res, "%s", cfg_value("TOTK_OUTPUT_RES"));
+    snprintf(g_live_up, sizeof g_live_up, "%s", cfg_value("TOTK_UPSCALER"));
+    snprintf(g_live_mode, sizeof g_live_mode, "%s", cfg_value("TOTK_DLSS_MODE"));
+    snprintf(g_live_scale, sizeof g_live_scale, "%s", cfg_value("TOTK_RENDER_SCALE"));
+    snprintf(g_live_window, sizeof g_live_window, "%s", cfg_value("TOTK_WINDOW_SIZE"));
+    g_live_seen = 1;
+}
+
+// ---- Unicorn Overlord: the game composes its whole frame in 1920x1080, and its display setup reads that size from
+// several places (recomp/patches-uo-v105.txt covers two of them; patching only those leaves the render targets at 1080p
+// while the window texture grows, so the picture sits in one corner). The port therefore keeps the game's own frame size
+// and produces the output resolution on the present chain: FSR 1 (or DLSS, vk_dlss.cpp) upscales the frame to
+// TOTK_OUTPUT_RES, exactly as it does for the window. DLSS divides that output by its mode's ratio to decide what it
+// reads, so Quality on 3840x2160 reads a 2560x1440 frame.
+
+
+void res_uo_sizes(unsigned draw[2], unsigned target[2]) {
+    if (draw) draw[0] = U_draw[0], draw[1] = U_draw[1];
+    if (target) target[0] = U_target[0], target[1] = U_target[1];
+}
+
+// The output size: TOTK_OUTPUT_RES (1280x720 up to 7680x4320), capped by the window.
+static void uo_apply(const char *why) {
+    unsigned w = BASE_W, h = BASE_H;
+    char tail;
+    const char *o = cfg_value("TOTK_OUTPUT_RES");
+    if (sscanf(o, "%ux%u%c", &w, &h, &tail) == 2 && w >= 1280 && h >= 720 && w <= 7680 && h <= 4320) {
+        if (!res_is_16x9(w, h))
+            rt_log("resolution: TOTK_OUTPUT_RES=%s is not 16:9; the game's layouts assume 16:9", o);
+    } else {
+        rt_log("resolution: TOTK_OUTPUT_RES=%s is not <width>x<height> in 1280x720..7680x4320; 1920x1080", o);
+        w = BASE_W, h = BASE_H;
+    }
+    // A picture larger than the window would be scaled back down on its way to the screen, throwing away what the
+    // upscaler produced. The window is the ceiling unless it is not readable.
+    int cw = 0, ch = 0;
+    window_cap(&cw, &ch);
+    if (cw > 0 && ch > 0 && ((int)w > cw || (int)h > ch)) {
+        double f = fmin((double)cw / w, (double)ch / h);
+        unsigned nw = (unsigned)(w * f) & ~1u, nh = (unsigned)(h * f) & ~1u;
+        if (nw >= 1280 && nh >= 720) {
+            rt_log("resolution: %ux%u is larger than the %dx%d window; %ux%u", w, h, cw, ch, nw, nh);
+            w = nw, h = nh;
+        }
+    }
+    // The game draws its own frame; the upscaler produces the output from it.
+    U_draw[0] = BASE_W, U_draw[1] = BASE_H;
+    U_target[0] = w, U_target[1] = h;
+    const char *up = cfg_value("TOTK_UPSCALER");
+    if (strcmp(up, "dlss")) {
+        rt_log("resolution: Unicorn Overlord draws %ux%u, output %ux%u scaled by %s (%s)", BASE_W, BASE_H, w, h, up, why);
+    } else {
+        // "auto" picks the mode per output size inside vk_dlss.cpp; the log names the ratio that lands the picture on
+        // the output, so the two agree.
+        const char *m = cfg_value("TOTK_DLSS_MODE");
+        double ratio = 1.0;
+        if (!strcmp(m, "auto")) {
+            double want = (double)w / (double)BASE_W;
+            static const double kRatios[] = {1.0, 1.5, 1.0 / 0.58, 2.0, 3.0};
+            double best = 1e9;
+            for (size_t i = 0; i < sizeof kRatios / sizeof *kRatios; i++)
+                if (fabs(kRatios[i] - want) < best) best = fabs(kRatios[i] - want), ratio = kRatios[i];
+        } else {
+            static const struct { const char *name; double ratio; } kModes[] = {
+                {"dlaa", 1.0}, {"quality", 1.5}, {"balanced", 1.0 / 0.58}, {"performance", 2.0}, {"ultra", 3.0}};
+            for (size_t i = 0; i < sizeof kModes / sizeof *kModes; i++)
+                if (!strcmp(kModes[i].name, m)) ratio = kModes[i].ratio;
+        }
+        // DLSS reads the picture the game produced and writes it at the mode's ratio; the present blit then fits that
+        // into the window. A ratio below the output means the picture is scaled up again, which is why "auto" exists.
+        unsigned ow = (unsigned)(BASE_W * ratio + 0.5) & ~1u, oh = (unsigned)(BASE_H * ratio + 0.5) & ~1u;
+        rt_log("resolution: Unicorn Overlord draws %ux%u, DLSS %s x%.2f presents %ux%u (output setting %ux%u) (%s)",
+               BASE_W, BASE_H, m, ratio, ow, oh, w, h, why);
+    }
+}
+
+static void uo_init(void) {
+    uo_apply("start");
+    // the live path remembers what start already applied, so the first settings change is the first change
+    snprintf(g_live_res, sizeof g_live_res, "%s", cfg_value("TOTK_OUTPUT_RES"));
+    snprintf(g_live_up, sizeof g_live_up, "%s", cfg_value("TOTK_UPSCALER"));
+    snprintf(g_live_mode, sizeof g_live_mode, "%s", cfg_value("TOTK_DLSS_MODE"));
+    snprintf(g_live_window, sizeof g_live_window, "%s", cfg_value("TOTK_WINDOW_SIZE"));
+    g_live_seen = 1;
+}
+
+void res_init(void) {
+    if (RT_ENGAGE) { engage_init(); return; }
+    if (RT_UO) { uo_init(); return; }
+    if (!bigger()) {
+        rt_log("resolution: the game's own (output 1920x1080, scene 1600x900)");
+        return;
+    }
+    int output = rt_patch_set("output"), scene = rt_patch_set("scene");
+    if (output < 0 || scene < 0) {
+        rt_log("resolution: the generated C has no output and scene patch sets; the game keeps its own resolution");
+        return;
+    }
+    fs_init();   // romfs.c serves the grown HeapDef from here on (res_heapdef_served)
+    if (res_heap_extra_kib() && !R.heapdef_ok) {   // sizes at or below the shipped ones fit the shipped heaps
+        rt_log("resolution: no grown HeapDef table; the game keeps its own resolution");
+        return;
+    }
+    uint8_t *page = rt_patch_page();
+    double k = RT_V143 ? (double)R.ow / BASE_W : 1.0;   // 1.4.3's own scaling of the scene with the output width
+    int scene_on = R.scene_set || (!RT_V143 && (R.ow != BASE_W || R.oh != BASE_H));
+    float sc[2] = {(float)(R.sw / k), (float)(R.sh / k)};
+    uint64_t out = pack(R.ow, R.oh), none = 0;
+    memcpy(page + 16, sc, sizeof sc);
+    memcpy(page + 32, &out, 8);
+    memcpy(page + 40, &none, 8);
+    memcpy(page + 48, &out, 8);
+    rt_patch_switch(output, R.ow != BASE_W || R.oh != BASE_H);
+    rt_patch_switch(scene, scene_on);
+    R.on = 1;
+    // Another shape than 16:9 (more than 1% off): the camera takes the output's ratio (recomp/patches-v121.txt and
+    // patches-v143.txt, set aspect), so a 21:9 output shows more of the world at the sides instead of a stretched 16:9 view. The HUD's layouts
+    // for that shape come from romfs-patches-<w>x<h> (romfs.c overlay_init, tools/make_romfs_patches.py --aspect).
+    double ratio = (double)R.ow / R.oh, game = (double)BASE_W / BASE_H;
+    int aspect = rt_patch_set("aspect");
+    if (!res_is_16x9(R.ow, R.oh)) {
+        if (aspect < 0) {
+            rt_log("resolution: output %ux%u is not 16:9 and this game version has no camera aspect patch; the view "
+                   "is stretched", R.ow, R.oh);
+        } else {
+            float r = (float)ratio;
+            memcpy(page + 56, &r, sizeof r);
+            rt_patch_switch(aspect, 1);
+            rt_log("resolution: camera aspect ratio %.4f (16:9 is %.4f)", ratio, game);
+        }
+    } else {
+        rt_patch_switch(aspect, 0);   // the page holds no ratio
+    }
+    rt_log("resolution: output %ux%u, scene %ux%u%s; texture heap +%llu KiB", R.ow, R.oh, R.sw, R.sh,
+           scene_on ? "" : " (the game's own 5/6 of the output)", (unsigned long long)res_heap_extra_kib());
+}
+
+// 16:9 within 1% (1366x768 counts): the shape the game's own layouts and camera are made for.
+int res_is_16x9(unsigned w, unsigned h) {
+    double rel = ((double)w / h) / ((double)BASE_W / BASE_H);
+    return rel >= 0.99 && rel <= 1.01;
+}
+
+// The game resolution asks for a romfs-patches-<w>x<h> overlay: it is not 16:9 and the game version has the camera
+// aspect patch (set aspect); the UI layouts of another shape only fit a camera that follows the same shape.
+int res_wants_wide_overlay(const unsigned out[2]) {
+    return !res_is_16x9(out[0], out[1]) && rt_patch_set("aspect") >= 0;
+}
+
+// Field of view (TOTK_FOV, percent of the game's own, 70..140, live): the camera's vertical view angle times the
+// factor on page +60 (recomp/patches-v143.txt, set fov). The horizontal angle follows through the aspect ratio. 100
+// switches the set off, so the camera code is the game's own. Runs on a settings change (gfx_present.c
+// window_settings_live), the first time at the first present.
+#define FOV_MIN 70
+#define FOV_MAX 140
+void res_fov_live(void) {
+    static int set = -2, shown = 100;
+    if (set == -2) set = rt_patch_set("fov");
+    int pct = cfg_int("TOTK_FOV");
+    pct = pct < FOV_MIN ? FOV_MIN : pct > FOV_MAX ? FOV_MAX : pct;
+    if (pct == shown) return;
+    shown = pct;
+    if (set < 0) {
+        rt_log("resolution: this game version has no field-of-view patch; TOTK_FOV=%d does nothing", pct);
+        return;
+    }
+    float k = pct / 100.0f;
+    memcpy((uint8_t *)rt_patch_page() + 60, &k, sizeof k);   // before the switch: a site that sees it on reads k
+    rt_patch_switch(set, pct != 100);
+    rt_log("resolution: field of view %d%% of the game's", pct);
+}
+
+// The live path for the resolution and upscaler settings (gfx_present.c window_settings_live, every settings change).
+// The patch page's size and scale are rewritten here, so the game sees the new values the next time it builds its
+// buffers or reads its camera scale — no restart.
+void res_engage_live(void) {
+    if (RT_UO) {
+        // Unicorn Overlord: the game's own frame never changes, so only the output size and the upscaler do. Both are
+        // read by the present chain every frame, so a change applies on the next present without asking the game for
+        // anything; only the sizes the overlay reports have to be recomputed. The g_live_* fields are the same ones
+        // uo_init filled at start, so the first call here is not a change.
+        const char *res = cfg_value("TOTK_OUTPUT_RES"), *up = cfg_value("TOTK_UPSCALER");
+        const char *mode = cfg_value("TOTK_DLSS_MODE"), *win = cfg_value("TOTK_WINDOW_SIZE");
+        if (g_live_seen && !strcmp(res, g_live_res) && !strcmp(up, g_live_up) && !strcmp(mode, g_live_mode) &&
+            !strcmp(win, g_live_window))
+            return;
+        snprintf(g_live_res, sizeof g_live_res, "%s", res);
+        snprintf(g_live_up, sizeof g_live_up, "%s", up);
+        snprintf(g_live_mode, sizeof g_live_mode, "%s", mode);
+        snprintf(g_live_window, sizeof g_live_window, "%s", win);
+        int first = !g_live_seen;
+        g_live_seen = 1;
+        uo_apply(first ? "start" : "settings changed");
+        return;
+    }
+    if (!RT_ENGAGE) return;
+    const char *res = cfg_value("TOTK_OUTPUT_RES"), *up = cfg_value("TOTK_UPSCALER");
+    const char *mode = cfg_value("TOTK_DLSS_MODE"), *scale = cfg_value("TOTK_RENDER_SCALE");
+    // TOTK_WINDOW_SIZE is part of the comparison: on Engage the window size is the game resolution (engage_apply), so
+    // a window change that did not reach engage_apply left the game drawing the size it started with.
+    const char *win = cfg_value("TOTK_WINDOW_SIZE");
+    if (g_live_seen && !strcmp(res, g_live_res) && !strcmp(up, g_live_up) && !strcmp(mode, g_live_mode) &&
+        !strcmp(scale, g_live_scale) && !strcmp(win, g_live_window))
+        return;
+    snprintf(g_live_res, sizeof g_live_res, "%s", res);
+    snprintf(g_live_up, sizeof g_live_up, "%s", up);
+    snprintf(g_live_mode, sizeof g_live_mode, "%s", mode);
+    snprintf(g_live_scale, sizeof g_live_scale, "%s", scale);
+    snprintf(g_live_window, sizeof g_live_window, "%s", win);
+    int first = !g_live_seen;
+    g_live_seen = 1;
+    engage_apply(first ? "start" : "settings changed");
+    // Unity re-reads the display and rebuilds its buffers when the console changes operation mode (docked to handheld
+    // and back), which is how a resolution change happens on the real hardware. Push that notification after a live
+    // change so the new size in the patch page is picked up without a restart; the mode itself stays as configured.
+    if (!first) {
+        // The game decides to rebuild its display when the *reported* console mode changes, not when a notification
+        // arrives: Unity reads nn::oe::GetOperationMode and compares it with what it saw last. So flip the reported
+        // mode for a second around the notifications.
+        ov_operation_mode_flip();
+        oe_push_message(OE_MSG_OPERATION_MODE_CHANGED);
+        oe_push_message(OE_MSG_PERFORMANCE_MODE_CHANGED);
+        rt_log("resolution: pushed the operation-mode change so the game rebuilds its buffers");
+    }
+}
+
+void res_wanted(unsigned out[2]) {
+    decide();
+    out[0] = R.ow, out[1] = R.oh;
+}
+
+void res_sizes(unsigned out[2], unsigned scene[2]) {
+    if (RT_ENGAGE) {   // Engage fills its own pair in engage_apply; the TotK fields stay at their defaults
+        out[0] = E_draw[0] ? E_draw[0] : BASE_W, out[1] = E_draw[1] ? E_draw[1] : BASE_H;
+        scene[0] = E_scene[0] ? E_scene[0] : SCENE_W, scene[1] = E_scene[1] ? E_scene[1] : SCENE_H;
+        return;
+    }
+    if (RT_UO) {
+        out[0] = U_draw[0], out[1] = U_draw[1];
+        scene[0] = U_draw[0], scene[1] = U_draw[1];   // one size: the 3D pass renders into the frame
+        return;
+    }
+    decide();
+    out[0] = R.on ? R.ow : BASE_W, out[1] = R.on ? R.oh : BASE_H;
+    scene[0] = R.on ? R.sw : SCENE_W, scene[1] = R.on ? R.sh : SCENE_H;
+}
