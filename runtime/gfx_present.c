@@ -31,7 +31,9 @@
 #define FRAMES 2
 #define MAX_IMAGES 16
 #define VSYNC_NS 1000000000ull
-#define VSYNC_HZ 60
+// The vsync thread's rate. The console's display flips at 60 Hz, so this is 60; UO_VSYNC_HZ (60..240) raises it for
+// experiments with a game whose frame waits for more than one tick per frame.
+static unsigned g_vs_hz = 60;
 
 // ---- queue lock
 static PlatRMutex g_ql;
@@ -151,10 +153,10 @@ static void vsync_main(void *arg) {
     uint64_t n = 0;
     for (;;) {
         uint64_t start = (uint64_t)g_vs_start_ns;
-        uint64_t due = start + (n + 1) * VSYNC_NS / VSYNC_HZ;
+        uint64_t due = start + (n + 1) * VSYNC_NS / g_vs_hz;
         uint64_t now = kern_now_ns();
         if (now > due + 100000000ull) {                  // the process stalled: restart the schedule, no catch-up burst
-            g_vs_start_ns = (int64_t)(now - (n + 1) * VSYNC_NS / VSYNC_HZ);
+            g_vs_start_ns = (int64_t)(now - (n + 1) * VSYNC_NS / g_vs_hz);
         } else if (due > now) {
             plat_wait_ns(due - now);
         }
@@ -179,6 +181,9 @@ static void vsync_ensure(void) {
     plat_rmutex_lock(&g_start_lock);
     if (!g_vs_started) {
         g_vs_started = 1;
+        const char *hz = cfg_get("UO_VSYNC_HZ");
+        int v = hz && *hz ? atoi(hz) : 60;
+        if (v >= 60 && v <= 240) g_vs_hz = (unsigned)v;
         g_vs_start_ns = (int64_t)kern_now_ns();
         if (!plat_thread_spawn(vsync_main, NULL, "vsync", 0)) rt_fatal("gfx: cannot start the vsync thread");
     }
@@ -206,7 +211,7 @@ void gfx_vsync_bind_counter(volatile int32_t *counter) {
 }
 
 uint64_t gfx_vsync_ticks(void) { return (uint64_t)plat_cas64(&g_ticks, 0, 0); }
-uint64_t gfx_vsync_time_ns(uint64_t tick) { return (uint64_t)g_vs_start_ns + tick * VSYNC_NS / VSYNC_HZ; }
+uint64_t gfx_vsync_time_ns(uint64_t tick) { return (uint64_t)g_vs_start_ns + tick * VSYNC_NS / g_vs_hz; }
 
 // ---- focus
 int gfx_window_focused(void) { return g_focused; }

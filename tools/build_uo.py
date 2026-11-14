@@ -110,7 +110,18 @@ END
     build_game.write_if_changed(resource, content)
     build_game.RUNTIME = extra.runtime.resolve()
     original_sources = build_game.runtime_sources
-    build_game.runtime_sources = lambda skip=(): [resource if p.name == 'uo.rc' else p for p in original_sources(skip)]
+
+    def sources_with_resource(skip=()):
+        """The runtime sources, with this build's generated uo.rc in place of runtime/uo.rc.
+
+        The generated script is always the one compiled: it carries the version information and absolute paths to the
+        icon and the manifest, while runtime/uo.rc names them relative to runtime/. A package may not carry runtime/uo.rc
+        at all either. Without a resource script uo.exe has no icon and no manifest, and a process without the manifest
+        is not DPI aware, so Windows stretches its picture and the overlay looks blurred."""
+        sources = [p for p in original_sources(skip) if p.name != 'uo.rc']
+        return [*sources, resource]
+
+    build_game.runtime_sources = sources_with_resource
     build_game.APP_ICON = icon
     old_ini, new_ini = output / 'uo.ini', output / 'uo.ini'
     if old_ini.exists() and not new_ini.exists():

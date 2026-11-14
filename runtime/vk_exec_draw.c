@@ -2290,14 +2290,6 @@ static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
     return 1;
 }
 
-static void bind_index(VkExec *ex, const void *data, uint64_t bytes, VkIndexType type) {
-    VkBuffer b;
-    VkDeviceSize o;
-    memcpy(scratch(ex, bytes, &b, &o), data, bytes);
-    vkCmdBindIndexBuffer(ex->cb, b, o, type);
-    ex->recorded++;
-}
-
 // Maxwell renders a 3D render target with one instanced draw: instance i writes slice i (the NVN driver
 // expands the draw per layer, the way its MME macros repeat clears; maxwell.md 1.3, 1.13). A single Vulkan
 // draw needs gl_Layer from the vertex shader, which the guest shader does not write, so the replay expands
@@ -2350,23 +2342,27 @@ static void op_draw(VkExec *ex, const p_draw *d) {
     vk_exec_frame.draws++;
     uint32_t inst = d->instances > 0 ? (uint32_t)d->instances : 1, first = (uint32_t)d->first, n = (uint32_t)d->count;
     if (d->prim == NVN_DRAW_PRIMITIVE_QUADS && n >= 4) {   // quads become two triangles each
+        // The index list goes straight into the frame's scratch buffer. malloc+free per draw was 56% of the main
+        // thread's time in battle, where thousands of quads are drawn every frame.
         uint32_t q = n / 4;
-        uint32_t *ix = malloc(sizeof *ix * 6 * q);
-        if (!ix) rt_fatal("vk: out of memory");
+        VkBuffer ib;
+        VkDeviceSize ioff;
+        uint32_t *ix = (uint32_t *)scratch(ex, sizeof(uint32_t) * 6 * q, &ib, &ioff);
         for (uint32_t i = 0; i < q; i++) {
             uint32_t v = first + 4 * i, k[6] = {0, 1, 2, 0, 2, 3};
             for (int j = 0; j < 6; j++) ix[6 * i + j] = v + k[j];
         }
-        bind_index(ex, ix, sizeof *ix * 6 * q, VK_INDEX_TYPE_UINT32);
-        free(ix);
+        vkCmdBindIndexBuffer(ex->cb, ib, ioff, VK_INDEX_TYPE_UINT32);
+        ex->recorded++;
         vkCmdDrawIndexed(ex->cb, 6 * q, inst, 0, 0, (uint32_t)d->base_instance);
     } else if (d->prim == NVN_DRAW_PRIMITIVE_LINE_LOOP && n >= 2) {   // a strip that returns to its first vertex
-        uint32_t *ix = malloc(sizeof *ix * (n + 1));
-        if (!ix) rt_fatal("vk: out of memory");
+        VkBuffer ib;
+        VkDeviceSize ioff;
+        uint32_t *ix = (uint32_t *)scratch(ex, sizeof(uint32_t) * (n + 1), &ib, &ioff);
         for (uint32_t i = 0; i < n; i++) ix[i] = first + i;
         ix[n] = first;
-        bind_index(ex, ix, sizeof *ix * (n + 1), VK_INDEX_TYPE_UINT32);
-        free(ix);
+        vkCmdBindIndexBuffer(ex->cb, ib, ioff, VK_INDEX_TYPE_UINT32);
+        ex->recorded++;
         vkCmdDrawIndexed(ex->cb, n + 1, inst, 0, 0, (uint32_t)d->base_instance);
     } else {
         vkCmdDraw(ex->cb, n, inst, first, (uint32_t)d->base_instance);
@@ -2412,8 +2408,11 @@ static void op_draw_idx(VkExec *ex, const p_draw_idx *d) {
         if (sp.alloc && d->itype != NVN_INDEX_TYPE_UNSIGNED_INT)
             return warn_once(W_INDEX, "quad indices in device-local memory: draw skipped");
         vk_mem_count(VK_MCLS_SCRATCH, VK_MUSE_IB, (uint64_t)n * 4);
-        uint32_t *ix = malloc(sizeof *ix * n);
-        if (!ix) rt_fatal("vk: out of memory");
+        // Straight into the frame's scratch buffer: this is the hottest draw path in battle, and a malloc and free
+        // per draw put the main thread in the heap allocator for most of the frame.
+        VkBuffer ib;
+        VkDeviceSize ioff;
+        uint32_t *ix = (uint32_t *)scratch(ex, sizeof(uint32_t) * n, &ib, &ioff);
         for (uint32_t i = 0; i < q; i++) {
             uint32_t v[4];
             for (int k = 0; k < 4; k++) {
@@ -2425,8 +2424,8 @@ static void op_draw_idx(VkExec *ex, const p_draw_idx *d) {
             uint32_t k2[6] = {0, 1, 2, 0, 2, 3};
             for (int j = 0; j < 6; j++) ix[6 * i + j] = v[k2[j]];
         }
-        bind_index(ex, ix, sizeof *ix * n, VK_INDEX_TYPE_UINT32);
-        free(ix);
+        vkCmdBindIndexBuffer(ex->cb, ib, ioff, VK_INDEX_TYPE_UINT32);
+        ex->recorded++;
         vkCmdDrawIndexed(ex->cb, n, d->instances > 0 ? (uint32_t)d->instances : 1, 0, d->base_vertex,
                          (uint32_t)d->base_instance);
         ex->recorded++;
@@ -2436,14 +2435,15 @@ static void op_draw_idx(VkExec *ex, const p_draw_idx *d) {
         if (sp.alloc) return warn_once(W_INDEX, "byte indices in device-local memory: draw skipped");
         vk_mem_count(sp.cls, VK_MUSE_CPU_READ, bytes);
         vk_mem_count(VK_MCLS_SCRATCH, VK_MUSE_IB, 2 * bytes);
-        uint16_t *ix = malloc(sizeof *ix * (size_t)d->count);
-        if (!ix) rt_fatal("vk: out of memory");
+        VkBuffer ib;
+        VkDeviceSize ioff;
+        uint16_t *ix = (uint16_t *)scratch(ex, sizeof *ix * (size_t)d->count, &ib, &ioff);
         for (int i = 0; i < d->count; i++) {
             uint8_t v = ((const uint8_t *)(uintptr_t)d->ibuf)[i];
             ix[i] = restart && v == 0xff ? 0xffff : v;
         }
-        bind_index(ex, ix, sizeof *ix * (size_t)d->count, VK_INDEX_TYPE_UINT16);
-        free(ix);
+        vkCmdBindIndexBuffer(ex->cb, ib, ioff, VK_INDEX_TYPE_UINT16);
+        ex->recorded++;
     } else if (sp.offset % isize[d->itype]) {
         return warn_once(W_INDEX, "index buffer %#llx is not aligned to its index size: draw skipped", (unsigned long long)d->ibuf);
     } else {

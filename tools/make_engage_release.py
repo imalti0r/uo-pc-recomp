@@ -89,7 +89,7 @@ def copy_sources(out):
             continue
         source = ROOT / relative
         if source.suffix.lower() not in {'.py', '.c', '.cc', '.cpp', '.h', '.hpp', '.json', '.ps1', '.txt',
-                                        '.manifest', '.inl', '.glsl', '.comp', '.spv', '.inc'} and relative.as_posix() not in {
+                                        '.manifest', '.inl', '.glsl', '.comp', '.spv', '.inc', '.rc'} and relative.as_posix() not in {
                 'runtime/ui/fonts/Roboto-Medium.ttf', 'uo_setup/art/backdrop.jpg',
                 'uo_setup/art/wordmark.png', 'uo_setup/art/README.md',
                 # The icon is embedded into the uo.exe the player's machine compiles, so the package must carry it.

@@ -157,8 +157,14 @@ void rt_sha256(const void *p, size_t n, uint8_t out[32]) { sha256(p, n, out); }
 void rt_arena_trace(void) {
     static uint64_t last[2][6];
     static int n;
-    const char *e = cfg_get("UO_ARENA_TRACE");
-    if (!e || !*e || !rt_layout_count) return;
+    // Read once: rt_ticks calls this on every guest clock read (tens of thousands of times a frame), and cfg_get
+    // normalises the key and walks the whole settings table on each call.
+    static int on = -1;
+    if (on < 0) {
+        const char *e = cfg_get("UO_ARENA_TRACE");
+        on = e && *e;
+    }
+    if (!on || !rt_layout_count) return;
     uint64_t base = rt_layout[0].base;
     for (int k = 0; k < 2; k++) {
         uint64_t slot = base + (k ? 0x28f4000ull + 0x7e0 : 0x28f2000ull + 0xde0);
