@@ -285,7 +285,9 @@ static VkCommandBuffer prologue(VkCtx *c, uint64_t fence) {
     VkCommandBufferBeginInfo bi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                                    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     vkBeginCommandBuffer(cb, &bi);
-    int pair = ts_open(cb);
+    // No pair of its own while a frame's pair is open: a timestamp write breaks the pipeline at every part, which on
+    // NVIDIA costs milliseconds over a frame of ~50 parts (the overlay then halves the frame rate it reports).
+    int pair = ts_cur >= 0 ? -1 : ts_open(cb);
     vk_mem_mirror_prologue(cb);
     ts_close(cb, pair, fence);
     vkEndCommandBuffer(cb);
@@ -295,7 +297,8 @@ static VkCommandBuffer prologue(VkCtx *c, uint64_t fence) {
 VkCommandBuffer vk_sync_split(void) {
     VkCtx *c = vk_ctx();
     VkCommandBuffer cb = slots[cur_slot].cb;
-    ts_end(cb, cur_fence);
+    // The frame's pair stays open across the parts: it is closed on the last one (vk_sync_submit), so the GPU time
+    // covers the whole frame and the pipeline breaks once, not once per part.
     if (!rec_end_cb(cb, 0, 0)) vkEndCommandBuffer(cb);   // every command of the part is in cb, ended by its recorder
     vk_upload_flush(0);   // the uploads this part asked for precede it in queue order
     VkCommandBuffer pro = prologue(c, cur_fence);
@@ -316,8 +319,7 @@ VkCommandBuffer vk_sync_split(void) {
                                    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     vkBeginCommandBuffer(s->cb, &bi);
     vk_crumb(s->cb, VK_CRUMB_SUBMIT, cur_fence);
-    ts_begin(s->cb);
-    rec_begin(s->cb);
+    rec_begin(s->cb);   // the frame's timestamp pair is still open from the first part
     return s->cb;
 }
 
