@@ -103,3 +103,13 @@
 - 抓帧：`UO_DUMP=<frame>` → `dump/passes.txt` + `pass_*.png`
 - 关键开关：`UO_POOL_ALIGN`（1=连存储一起移，会白屏，仅对比用）、
   `UO_POOL_ADDR_ALIGN`（默认 1，只对齐回报地址）、`UO_SHADER_DUMP`
+
+## 🚀 Release v0.1.0-alpha.1 (2026-11-14)
+
+- Repo: https://github.com/imalti0r/uo-pc-recomp
+- Release: https://github.com/imalti0r/uo-pc-recomp/releases/tag/v0.1.0-alpha.1
+- Asset: UO-Setup-0.1.0-alpha.1-windows.zip (166 MiB, sha256 35a9aca738e64c7e57b6dec5cadd2af77bf7d1ebb4c06f005a8fe4284ac8f49c)
+- E2E verified: clean setup package installed to build/e2e-final in 120 s (result ok), produced a uo.exe that reaches the title screen.
+- Icon: runtime/uo.ico, made by tools/make_icon.py from the PlayStation key art (rounded square, 10 sizes).
+- Setup build: .venv-py314\\Scripts\\python.exe tools/make_engage_release.py --out build/release/uo-setup --zip build/release/UO-Setup-<ver>-windows.zip
+- Open issue for the next build: the Vanillaware logo background plate draws as a visible rectangle (game draws a +/-550x430 quad; the atlas region has partial alpha and the draw is additive).

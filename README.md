@@ -4,7 +4,7 @@ A native Windows port of **Unicorn Overlord 1.05**, built on [TotK Recomp](https
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Setup guide](docs/installing-uo.md) · [Report a bug](https://github.com/imalti0r/uo-pc-recomp/issues/new) · [Build from source](docs/building-uo.md)
+**Download: [UO-Setup-0.1.0-alpha.1-windows.zip](https://github.com/imalti0r/uo-pc-recomp/releases/latest)** · [Setup guide](docs/installing-uo.md) · [Report a bug](https://github.com/imalti0r/uo-pc-recomp/issues/new) · [Build from source](docs/building-uo.md)
 
 **This is an early alpha.** The opening runs, the tactical map and the first battle tutorial play, and the frame rate holds 60 FPS in a battle. Later chapters, saves and audio mixing haven't been checked end to end. Expect bugs, and back up your saves.
 
